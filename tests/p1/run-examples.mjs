@@ -109,6 +109,7 @@ async function main() {
     const freeDir = path.join(rootDir, 'docs', 'examples', 'free-mode');
     const adapterPath = path.join(freeDir, 'adapter.cpp');
     const freeSolPath = path.join(freeDir, 'solution.cpp');
+    const freeAltPath = path.join(freeDir, 'solution_alt.cpp');
     const freeCePath = path.join(freeDir, 'solution_ce.cpp');
     const freeWaPath = path.join(freeDir, 'solution_wa.cpp');
     const freeTestsDir = path.join(freeDir, 'tests');
@@ -150,7 +151,44 @@ async function main() {
       }
     }
 
-    // 2.2. Lời giải sai chữ ký (Expected: CE - Thất bại khi biên dịch/liên kết)
+    // 2.2. Lời giải thay thế (solution_alt.cpp: Brute-force O(n^2), đúng chữ ký, kỳ vọng AC mọi test)
+    const altBin = path.join(tempDir, 'alt_bin');
+    const altCompile = spawnSync('g++', ['-std=c++17', '-O2', freeAltPath, adapterPath, '-o', altBin], {
+      encoding: 'utf8',
+    });
+
+    if (altCompile.status !== 0) {
+      results.push(['Free Mode (Alt)', 'Compile', 'Compilation Success', 'CE', 'FAIL']);
+      console.error('Free mode alt compilation error:', altCompile.stderr);
+    } else {
+      for (const tc of ['test1', 'test2']) {
+        const inputData = fs.readFileSync(path.join(freeTestsDir, `${tc}.in`), 'utf8');
+        const expectedData = fs.readFileSync(path.join(freeTestsDir, `${tc}.out`), 'utf8');
+
+        const runRes = spawnSync(altBin, [], {
+          input: inputData,
+          encoding: 'utf8',
+          timeout: 5000,
+        });
+
+        if (runRes.status !== 0) {
+          results.push(['Free Mode (Alt)', tc, 'AC', 'RE', 'FAIL']);
+        } else {
+          const actualNorm = normalizeOutput(runRes.stdout);
+          const expectedNorm = normalizeOutput(expectedData);
+          const isMatch = actualNorm === expectedNorm;
+          results.push([
+            'Free Mode (Alt)',
+            tc,
+            'AC',
+            isMatch ? 'AC' : 'WA',
+            isMatch ? 'PASS' : 'FAIL',
+          ]);
+        }
+      }
+    }
+
+    // 2.3. Lời giải sai chữ ký (Expected: CE - Thất bại khi biên dịch/liên kết)
     const ceBin = path.join(tempDir, 'ce_bin');
     const ceCompile = spawnSync('g++', ['-std=c++17', '-O2', freeCePath, adapterPath, '-o', ceBin], {
       encoding: 'utf8',
@@ -165,7 +203,7 @@ async function main() {
       isCe ? 'PASS' : 'FAIL',
     ]);
 
-    // 2.3. Lời giải sai kết quả (Expected: WA trên ít nhất 1 test)
+    // 2.4. Lời giải sai kết quả (Expected: WA trên ít nhất 1 test)
     const waBin = path.join(tempDir, 'wa_bin');
     const waCompile = spawnSync('g++', ['-std=c++17', '-O2', freeWaPath, adapterPath, '-o', waBin], {
       encoding: 'utf8',

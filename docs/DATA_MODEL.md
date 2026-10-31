@@ -200,7 +200,7 @@ Lưu thông tin đề bài, cấu hình kiểm thử và mã khung template.
 |---|---|---|
 | **Mã Template** | `assignments.template_code` | Chỉ Giảng viên có quyền sửa; sinh viên chỉ đọc nội dung đề. |
 | **Vùng code sinh viên** | `submissions.submitted_code` | Ghi nhận bất biến (immutable) tại thời điểm nộp; sinh viên chỉ được đọc bài nộp của chính mình. |
-| **Bộ kiểm thử ẩn (Hidden Tests)** | `test_cases` (với `is_hidden = TRUE`) | Tuyệt đối không bao giờ trả về client sinh viên qua bất kỳ API nào. |
+| **Bộ kiểm thử ẩn (Hidden Tests)** | `test_cases` (với `is_hidden = TRUE`) | Không bao giờ trả về client sinh viên qua bất kỳ API nào. |
 | **Thông tin bài nộp (Submission)** | `submissions` | Lưu trạng thái hàng đợi, điểm tổng, thời gian nộp và cờ nộp trễ. |
 | **Kết quả từng test ẩn** | `submission_test_results` | Sinh viên chỉ được xem `verdict`, `execution_time_ms`, `memory_used_kb`; không xem được input hay expected output. |
 

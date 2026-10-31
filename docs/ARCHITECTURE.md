@@ -10,10 +10,10 @@ Hệ thống được thiết kế theo mô hình phân tán chi phí tối ưu,
 
 | Thành phần | Nền tảng triển khai | Công nghệ cốt lõi | Trách nhiệm chính |
 |---|---|---|---|
-| **Frontend** | Vercel (Hobby Tier) | Next.js, React, TailwindCSS, Monaco Editor | Cung cấp giao diện người dùng cho Giảng viên và Sinh viên; xử lý rewrite URL `/api/*` về Render API. Không kết nối trực tiếp cơ sở dữ liệu. |
-| **Backend API** | Render (Free Web Service) | Node.js, Express/Fastify, TypeScript, Docker | Quản lý người dùng, lớp học, bài tập, phân quyền RBAC; lưu trữ và điều phối bài nộp; thành phần duy nhất có quyền kết nối cơ sở dữ liệu. |
-| **Grader Worker** | Render (Free Web Service) | Node.js, GCC (`g++ -std=c++17`), Docker | Nhận job nộp bài qua HTTP từ API; quản lý hàng đợi in-memory; biên dịch và chạy cách ly code sinh viên; so sánh kết quả và callback về API. Không giữ credential cơ sở dữ liệu. |
-| **Database** | Azure Database for PostgreSQL | PostgreSQL Flexible Server (Burstable B1MS) | Lưu trữ tài khoản, lớp học, bài tập, template, bộ test ẩn, lịch sử nộp bài và kết quả chi tiết từng test. Miễn phí 12 tháng (750 giờ/tháng, 32 GB lưu trữ). |
+| **Frontend** | Vercel (Hobby Tier) | Next.js, React [ĐỀ XUẤT], TailwindCSS [ĐỀ XUẤT], Monaco Editor [ĐỀ XUẤT] | Cung cấp giao diện người dùng cho Giảng viên và Sinh viên; xử lý rewrite URL `/api/*` về Render API [CẦN XÁC MINH điều khoản Vercel Hobby cho mục đích giảng dạy]. Không kết nối trực tiếp cơ sở dữ liệu. |
+| **Backend API** | Render (Free Web Service) | Node.js, Express/Fastify [ĐỀ XUẤT], TypeScript, Docker | Quản lý người dùng, lớp học, bài tập, phân quyền RBAC; lưu trữ và điều phối bài nộp; thành phần duy nhất có quyền kết nối cơ sở dữ liệu. |
+| **Grader Worker** | Render (Free Web Service) | Node.js, GCC (`g++ -std=c++17`), Docker | Nhận job nộp bài qua HTTP từ API; quản lý hàng đợi in-memory; biên dịch và chạy cách ly code sinh viên; so sánh kết quả và callback về API [CẦN XÁC MINH Render có region Singapore cho free]. Không giữ credential cơ sở dữ liệu. |
+| **Database** | Azure Database for PostgreSQL | PostgreSQL Flexible Server (Burstable B1MS) | Lưu trữ tài khoản, lớp học, bài tập, template, bộ test ẩn, lịch sử nộp bài và kết quả chi tiết từng test. Miễn phí 12 tháng (750 giờ/tháng, 32 GB lưu trữ) [CẦN XÁC MINH ngày bắt đầu 12 tháng free của Azure trong Cost Management]. |
 
 ---
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 ### 4.1. Quản lý phiên làm việc (Session Management)
 - Hệ thống sử dụng cơ chế xác thực dựa trên cookie `httpOnly`, mang cờ `Secure` và `SameSite=Lax`.
-- Nhờ cơ chế **Next.js Rewrite** tại Vercel (`/api/*` chuyển tiếp tới domain Render API), trình duyệt coi cả Frontend và API đều chung một origin, ngăn chặn hoàn toàn các hạn chế về cookie bên thứ ba (third-party cookies).
+- Nhờ cơ chế **Next.js Rewrite** tại Vercel (`/api/*` chuyển tiếp tới domain Render API), trình duyệt coi cả Frontend và API đều chung một origin, giúp giảm thiểu các hạn chế về cookie bên thứ ba (third-party cookies) [CẦN XÁC MINH rewrite /api/* cùng origin giải quyết được cookie theo PROJECT_PLAN 3.5].
 - Mật khẩu người dùng được băm an toàn bằng thuật toán Argon2id (hoặc Bcrypt với chi phí salt phù hợp).
 
 ### 4.2. Khởi tạo tài khoản và phân quyền (RBAC)
@@ -136,7 +136,7 @@ sequenceDiagram
 
 ## 5. Mô hình an ninh và cách ly môi trường chấm (Grader Security & Sandbox)
 
-Chương trình do sinh viên nộp là **mã nguồn không tin cậy (untrusted code)**. Hệ thống áp dụng nguyên tắc phòng thủ đa lớp (Defense-in-depth) để đảm bảo an toàn tuyệt đối cho hạ tầng Render và tính bảo mật của dữ liệu:
+Chương trình do sinh viên nộp là **mã nguồn không tin cậy (untrusted code)**. Hệ thống áp dụng nguyên tắc phòng thủ đa lớp (Defense-in-depth) để giảm thiểu rủi ro cho hạ tầng Render và tăng cường bảo mật của dữ liệu:
 
 ```mermaid
 flowchart TD
@@ -177,14 +177,14 @@ flowchart TD
    - Chặn toàn bộ quyền truy cập vào các thư mục hệ thống quan trọng (`/etc`, `/root`, `/var`).
 3. **Môi trường biến rỗng (Clean Environment):**
    - Tiến trình chạy code được khởi tạo với cờ làm sạch toàn bộ biến môi trường (`env -i`).
-   - Tuyệt đối không chứa connection string, secret token hay thông tin hạ tầng trong biến môi trường.
+   - Không chứa connection string, secret token hay thông tin hạ tầng trong biến môi trường.
 4. **Không nắm giữ khóa cơ sở dữ liệu:**
-   - Dịch vụ Grader Worker không được cấp bất kỳ thông tin kết nối hay credential nào của Azure PostgreSQL. Mọi giao tiếp dữ liệu đều thông qua API.
+   - Dịch vụ Grader Worker không được cấp bất kỳ thông tin kết nối hay credential nào của Azure PostgreSQL. Mọi giao tiếp dữ liệu đều thông qua API; firewall database chỉ mở cho IP Render [CẦN XÁC MINH Render cung cấp outbound IP cho free service].
 5. **Thư mục làm việc tạm thời và tự hủy:**
    - Mỗi submission được cấp phát một thư mục ngẫu nhiên riêng biệt nằm trong `/tmp`.
    - Toàn bộ tệp mã nguồn, file thực thi và tệp kết quả tạm thời được dọn dẹp sạch sẽ ngay sau khi hoàn thành chấm bài.
 6. **Chặn kết nối mạng (Network Restriction):**
-   - Tiến trình chạy code sinh viên bị cấm tuyệt đối khả năng mở socket hoặc tạo kết nối mạng ra bên ngoài.
+   - Tiến trình chạy code sinh viên bị chặn khả năng mở socket hoặc tạo kết nối mạng ra bên ngoài.
 7. **Bảo vệ chế độ Template:**
    - Trình duyệt chỉ gửi nội dung vùng sinh viên viết; Server lưu template gốc và thực hiện ghép nối. Sinh viên không thể thay thế hàm `main()` hoặc ghi đè logic kiểm thử.
 8. **Bảo vệ chế độ Free Mode:**
@@ -195,12 +195,12 @@ flowchart TD
 ## 6. Xử lý sự cố và phục hồi lỗi (Fault Tolerance & Cold Start)
 
 1. **Khắc phục hiện tượng Render Free Sleep (Cold Start):**
-   - Các web service miễn phí trên Render sẽ chuyển sang trạng thái ngủ (sleep) sau 15 phút không nhận được lưu lượng truy cập; thời gian đánh thức mất khoảng 45–60 giây.
-   - Giải pháp: Cung cấp nút "Khởi động hệ thống" trên giao diện giảng viên để gửi request đồng thời tới API và Grader trước buổi thực hành 5 phút.
+   - Các web service miễn phí trên Render sẽ chuyển sang trạng thái ngủ (sleep) sau 15 phút không nhận được lưu lượng truy cập; thời gian đánh thức mất khoảng 1 phút (theo PROJECT_PLAN mục 3.3).
+   - Giải pháp: Cung cấp nút "Khởi động hệ thống" trên giao diện giảng viên để gửi request đồng thời tới API và Grader trước buổi thực hành vài phút (theo PROJECT_PLAN mục 3.3).
 2. **Khôi phục bài nộp khi Grader bị khởi động lại:**
    - Hàng đợi của Grader là in-memory queue. Nếu Grader bị restart đột ngột, các job đang xử lý có thể bị gián đoạn.
    - Cơ chế tự phục hồi: Mỗi khi Backend API tiếp nhận một request bất kỳ từ client, API sẽ kiểm tra các bản ghi submission đang ở trạng thái `PENDING` hoặc `RUNNING` quá thời gian 2 phút. Hệ thống sẽ tự động gửi lại job sang Grader (tối đa 2 lần retry). Nếu sau 2 lần retry vẫn thất bại, bản ghi được cập nhật trạng thái `SYSTEM_ERROR` để sinh viên và giảng viên nhận biết.
 3. **Quản lý kết nối cơ sở dữ liệu (Azure PostgreSQL B1MS):**
-   - B1MS có cấu hình phần cứng hạn chế (1 vCore, 2 GB RAM). Do đó backend API cấu hình connection pool tối đa 5 kết nối đồng thời.
+   - B1MS có tài nguyên thấp (PROJECT_PLAN mục 3.2). Do đó backend API cấu hình connection pool nhỏ (đề xuất tối đa 5 kết nối) [CẦN XÁC MINH giới hạn kết nối của B1MS].
    - Endpoint kiểm tra sức khỏe `/healthz` của API không thực hiện query vào database để tránh tiêu tốn tài nguyên.
    - Áp dụng cơ chế retry với exponential backoff khi gặp lỗi gián đoạn kết nối mạng tạm thời.

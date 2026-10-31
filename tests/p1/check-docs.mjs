@@ -103,6 +103,46 @@ export function verifyDocs(docsDir) {
     }
   }
 
+  // 5. Kiểm tra tag [CẦN XÁC MINH] và các từ khóa bắt buộc
+  let totalVerifyTags = 0;
+  const linesWithVerifyTag = [];
+
+  for (const file of requiredFiles) {
+    const filePath = path.join(docsDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const matches = content.match(/\[CẦN XÁC MINH/g);
+    if (matches) {
+      totalVerifyTags += matches.length;
+    }
+    const lines = content.split('\n');
+    for (const line of lines) {
+      if (line.includes('[CẦN XÁC MINH')) {
+        linesWithVerifyTag.push(line);
+      }
+    }
+  }
+
+  if (totalVerifyTags < 7) {
+    errors.push(`Found ${totalVerifyTags} '[CẦN XÁC MINH' tag(s) across docs, expected at least 7`);
+  }
+
+  const requiredKeywords = [
+    '12 tháng',
+    'Singapore',
+    'outbound IP',
+    'B1MS',
+    'Hobby',
+    'GitHub Actions',
+    'rewrite',
+  ];
+
+  for (const kw of requiredKeywords) {
+    const found = linesWithVerifyTag.some((line) => line.includes(kw));
+    if (!found) {
+      errors.push(`Missing required '[CẦN XÁC MINH' tag on same line with keyword '${kw}'`);
+    }
+  }
+
   return {
     pass: errors.length === 0,
     errors,
@@ -110,6 +150,7 @@ export function verifyDocs(docsDir) {
       filesChecked: requiredFiles.length,
       userStoriesCount: userStories.length,
       decisionsCount: decisions.length,
+      verifyTagsCount: totalVerifyTags,
     },
   };
 }
@@ -139,6 +180,11 @@ function runSelfTest() {
       name: 'fixture-us-missing-trace',
       dir: path.join(fixturesDir, 'us-missing-trace'),
       expectedPattern: /User story US-99 is not mapped to any phase P2-P10 in traceability table/,
+    },
+    {
+      name: 'fixture-missing-verify-tag',
+      dir: path.join(fixturesDir, 'missing-verify-tag'),
+      expectedPattern: /CẦN XÁC MINH/,
     },
   ];
 
@@ -192,6 +238,7 @@ if (args.includes('--self-test')) {
     console.log(`- 0 '[CHƯA CHỐT]' strings found`);
     console.log(`- User stories verified (with AC & Traceability): ${result.summary.userStoriesCount}`);
     console.log(`- Decisions verified (with all 4 fields): ${result.summary.decisionsCount}`);
+    console.log(`- Verification tags '[CẦN XÁC MINH': ${result.summary.verifyTagsCount} found with all required keywords`);
     process.exit(0);
   } else {
     console.error(`\nDocumentation check FAILED with ${result.errors.length} error(s):`);

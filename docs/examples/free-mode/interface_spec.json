@@ -14,6 +14,6 @@
         "description": "Giá trị tổng cần tìm"
       }
     ],
-    "description": "Trả về vector gồm 2 chỉ số 0-based phân biệt [i, j] sao cho nums[i] + nums[j] == target và i < j. Nếu không tìm thấy, trả về vector rỗng {}."
+    "description": "Trả về vector gồm 2 chỉ số 0-based phân biệt [i, j] sao cho nums[i] + nums[j] == target và i < j. Nếu không tìm thấy, trả về vector rỗng {}. Dữ liệu test ẩn đảm bảo có duy nhất một cặp chỉ số thỏa mãn (đáp án đơn nghiệm)."
   }
 }

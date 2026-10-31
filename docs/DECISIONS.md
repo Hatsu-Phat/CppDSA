@@ -6,15 +6,15 @@ Tài liệu ghi nhận toàn bộ các quyết định kiến trúc, công ngh�
 
 ### D-01: Nền tảng hosting ứng dụng (Vercel và Render)
 Lựa chọn: Sử dụng kết hợp Vercel cho Frontend (Next.js) và Render cho Backend API cùng Worker chấm bài (Docker Web Services).
-Lý do: Tận dụng tối đa gói miễn phí (Vercel Hobby và Render Free tier); phân tách rõ ràng giữa giao diện và môi trường chạy mã nguồn sinh viên; Render hỗ trợ container Docker tùy biến cần thiết cho compiler g++.
+Lý do: Tận dụng tối đa gói miễn phí (Vercel Hobby [CẦN XÁC MINH điều khoản Vercel Hobby cho mục đích giảng dạy] và Render Free tier [CẦN XÁC MINH Render có region Singapore cho free]); phân tách rõ ràng giữa giao diện và môi trường chạy mã nguồn sinh viên; Render hỗ trợ container Docker tùy biến cần thiết cho compiler g++.
 Phương án loại: Thuê 1 máy ảo Azure Linux VM duy nhất tự host toàn bộ hệ thống; triển khai cả frontend lẫn backend trên Render.
 Nguồn: PROJECT_PLAN mục 2 (người dùng 2026-10-31) và mục 3.1.
 
 ---
 
 ### D-02: Cơ sở dữ liệu chính (Azure Database for PostgreSQL Flexible Server B1MS)
-Lựa chọn: Sử dụng Azure Database for PostgreSQL Flexible Server, gói Burstable B1MS với 32 GB dữ liệu và 32 GB sao lưu trong chương trình 12 tháng miễn phí.
-Lý do: Cung cấp 750 giờ/tháng đủ để chạy liên tục 24/7 mà không bị tự động dừng (auto-pause); không bị giới hạn vCore-giây; PostgreSQL tương thích hoàn hảo với hệ sinh thái Node.js/TypeScript và dễ dàng phát triển local qua Docker.
+Lựa chọn: Sử dụng Azure Database for PostgreSQL Flexible Server, gói Burstable B1MS với 32 GB dữ liệu và 32 GB sao lưu trong chương trình 12 tháng miễn phí [CẦN XÁC MINH ngày bắt đầu 12 tháng free của Azure].
+Lý do: Cung cấp 750 giờ/tháng đủ để chạy liên tục 24/7 mà không bị tự động dừng (auto-pause); không bị giới hạn vCore-giây; PostgreSQL tương thích hoàn hảo với hệ sinh thái Node.js/TypeScript và dễ dàng phát triển local qua Docker; firewall mở cho IP Render [CẦN XÁC MINH Render cung cấp outbound IP cho free service].
 Phương án loại: Azure SQL Database Free Tier (bị auto-pause sau 15 phút, giới hạn 100.000 vCore-giây); Render PostgreSQL Free (bị xóa dữ liệu sau 90 ngày).
 Nguồn: PROJECT_PLAN mục 2, 3.2 (người dùng 2026-10-31).
 
@@ -30,7 +30,7 @@ Nguồn: PROJECT_PLAN mục 2, 3.0.
 
 ### D-04: Cơ chế hàng đợi và phân phối công việc chấm bài
 Lựa chọn: API đẩy job qua HTTP tới Grader; Grader quản lý hàng đợi trong bộ nhớ (in-memory queue), chạy tối đa 2 job đồng thời và gửi kết quả về API qua HTTP callback kèm secret token; phục hồi bằng cách API quét các submission PENDING/RUNNING quá 2 phút khi nhận request.
-Lý do: Tránh việc polling liên tục làm quá tải database PostgreSQL B1MS có tài nguyên thấp; Render không hỗ trợ background worker ở gói miễn phí nên grader được cấu hình như một web service.
+Lý do: Tránh việc polling liên tục làm quá tải database PostgreSQL B1MS có tài nguyên thấp [CẦN XÁC MINH giới hạn kết nối của B1MS]; Render không hỗ trợ background worker ở gói miễn phí nên grader được cấu hình như một web service.
 Phương án loại: Sử dụng Redis/RabbitMQ chuyên dụng (tốn chi phí/hạ tầng phụ); worker polling trực tiếp vào database PostgreSQL.
 Nguồn: PROJECT_PLAN mục 2, 3.3, 3.4.
 
@@ -38,7 +38,7 @@ Nguồn: PROJECT_PLAN mục 2, 3.3, 3.4.
 
 ### D-05: Cơ chế xác thực và quản lý phiên người dùng
 Lựa chọn: Đăng nhập bằng email và mật khẩu (băm bằng Argon2id hoặc bcrypt); quản lý phiên qua cookie httpOnly; Next.js trên Vercel thực hiện rewrite `/api/*` về Render API để duy trì cùng origin; giảng viên import CSV tạo tài khoản sinh viên kèm mật khẩu tạm thời bắt buộc đổi ở lần đăng nhập đầu.
-Lý do: Bảo mật cookie trước tấn công XSS; giải quyết vấn đề cookie bên thứ ba (third-party cookies) giữa Vercel và Render; không cần hạ tầng gửi email SMTP phức tạp.
+Lý do: Bảo mật cookie trước tấn công XSS; giải quyết vấn đề cookie bên thứ ba [CẦN XÁC MINH rewrite /api/* cùng origin giải quyết được cookie theo PROJECT_PLAN 3.5]; không cần hạ tầng gửi email SMTP phức tạp.
 Phương án loại: Đăng ký công khai qua email với mã OTP; xác thực JWT lưu trong LocalStorage; tích hợp OAuth/SSO bên ngoài.
 Nguồn: PROJECT_PLAN mục 2, 3.5.
 
@@ -77,10 +77,10 @@ Nguồn: PROJECT_PLAN mục 2, 4.3.
 ---
 
 ### D-10: Quy tắc so sánh output giữa kết quả sinh viên và đáp án
-Lựa chọn: So sánh từng dòng sau khi đã loại bỏ khoảng trắng thừa ở cuối mỗi dòng và các ký tự xuống dòng trống ở cuối file; không tự ý chuẩn hóa hoặc chuyển đổi ký tự khác.
-Lý do: Tránh việc chấm sai do sự khác biệt giữa ký tự kết thúc dòng `\r\n` (Windows) và `\n` (Linux) hoặc dấu cách vô tình ở cuối dòng; duy trì độ chính xác tuyệt đối đối với nội dung logic của kết quả.
+Lựa chọn: So sánh từng dòng sau khi đã loại bỏ khoảng trắng thừa ở cuối mỗi dòng và các ký tự xuống dòng trống ở cuối file; không tự ý chuẩn hóa hoặc chuyển đổi ký tự khác; mọi hidden test phải có đáp án duy nhất, hoặc bài phải có checker riêng (ngoài MVP).
+Lý do: Tránh việc chấm sai do sự khác biệt giữa ký tự kết thúc dòng `\r\n` (Windows) và `\n` (Linux) hoặc dấu cách vô tình ở cuối dòng; duy trì độ chính xác đối với nội dung logic của kết quả; quy tắc đơn nghiệm đảm bảo các thuật toán đúng khác nhau không bị chấm sai khi dùng bộ so sánh mặc định.
 Phương án loại: So sánh byte-by-byte chính xác tuyệt đối không bỏ khoảng trắng; tự ý chuyển chữ hoa thành chữ thường hoặc bỏ qua toàn bộ khoảng trắng giữa các từ.
-Nguồn: PROJECT_PLAN mục 2, 4.3.
+Nguồn: PROJECT_PLAN mục 2, 4.3 và phản hồi người dùng 2026-10-31.
 
 ---
 
@@ -101,8 +101,8 @@ Nguồn: PROJECT_PLAN mục 2, 4.3.
 ---
 
 ### D-13: Hệ thống tích hợp liên tục (CI)
-Lựa chọn: Sử dụng GitHub Actions để tự động chạy kiểm tra lint (ESLint, Prettier) và automated unit/integration tests trên cả monorepo mỗi khi có commit hoặc pull request.
-Lý do: Tích hợp trực tiếp với kho mã nguồn GitHub; kiểm soát chất lượng mã nguồn tự động, ngăn ngừa hồi quy lỗi trước khi bàn giao các phase.
+Lựa chọn: Sử dụng GitHub Actions để tự động chạy kiểm tra lint (ESLint [ĐỀ XUẤT], Prettier [ĐỀ XUẤT]) và automated unit/integration tests trên cả monorepo mỗi khi có commit hoặc pull request.
+Lý do: Tích hợp trực tiếp với kho mã nguồn GitHub; kiểm soát chất lượng mã nguồn tự động, ngăn ngừa hồi quy lỗi trước khi bàn giao các phase [CẦN XÁC MINH hạn mức GitHub Actions cho repo private].
 Phương án loại: Sử dụng GitLab CI, Travis CI hoặc CircleCI; không thiết lập CI mà chỉ kiểm thử thủ công trên máy cục bộ.
 Nguồn: PROJECT_PLAN mục 2, 8 (P3).
 

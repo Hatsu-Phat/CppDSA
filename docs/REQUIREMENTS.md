@@ -59,7 +59,7 @@ Giảng viên tạo bài tập cho phép sinh viên tự do đặt tên hàm ho�
 #### US-04: Quản lý bộ test ẩn và ví dụ công khai
 Giảng viên thiết lập các test case để đánh giá mức độ chính xác của bài giải sinh viên.
 - `AC-US-04-1`: Giảng viên có thể nhập các test ví dụ công khai trực tiếp vào phần mô tả đề bài để sinh viên tự kiểm tra trước khi nộp.
-- `AC-US-04-2`: Giảng viên tải lên bộ test ẩn gồm cặp input và expected output; hệ thống lưu trữ bộ test ẩn bảo mật tại database và tuyệt đối không gửi dữ liệu này về frontend sinh viên.
+- `AC-US-04-2`: Giảng viên tải lên bộ test ẩn gồm cặp input và expected output; hệ thống lưu trữ bộ test ẩn bảo mật tại database và không gửi dữ liệu này về frontend sinh viên.
 
 #### US-05: Giám sát bài nộp và kết quả của sinh viên
 Giảng viên theo dõi tình hình nộp bài và kết quả chấm của từng sinh viên trong lớp.
@@ -117,7 +117,7 @@ Sinh viên biết được trạng thái xử lý của bài nộp ngay sau khi 
 Sinh viên nhận phản hồi đánh giá chất lượng thuật toán để điều chỉnh bài làm.
 - `AC-US-15-1`: Sinh viên xem được điểm tổng kết (tỷ lệ test ẩn đạt), danh sách verdict từng test ẩn theo số thứ tự (Test 1: AC, Test 2: WA...).
 - `AC-US-15-2`: Sinh viên xem được thời gian chạy (ms) và bộ nhớ (KB) của từng test; trường hợp bị CE được xem thông báo lỗi biên dịch đã cắt gọn.
-- `AC-US-15-3`: Sinh viên tuyệt đối không thể xem dữ liệu input, expected output hay actual output của các test ẩn.
+- `AC-US-15-3`: Sinh viên không thể xem dữ liệu input, expected output hay actual output của các test ẩn.
 
 #### US-16: Xem lịch sử nộp bài và ghi nhận điểm cao nhất
 Sinh viên theo dõi tiến trình cải thiện thuật toán qua các lần thử.
@@ -136,7 +136,7 @@ Sinh viên tiếp tục làm bài sau khi hết hạn để tự trau dồi ki�
 ### 4.1. Quy tắc chấm bằng test ẩn (PROJECT_PLAN mục 4.3)
 1. Bài làm của sinh viên chỉ được chấm điểm bằng bộ test ẩn do giảng viên quản lý trong cơ sở dữ liệu.
 2. Các ví dụ công khai trong nội dung đề bài chỉ mang tính chất hướng dẫn sinh viên tự kiểm tra, không tham gia vào quá trình tính điểm khi submit.
-3. Nội dung test ẩn (đầu vào, dữ liệu kỳ vọng) tuyệt đối không được trả về phía trình duyệt của sinh viên.
+3. Nội dung test ẩn (đầu vào, dữ liệu kỳ vọng) không được trả về phía trình duyệt của sinh viên.
 4. Cơ chế chống gian lận: Dữ liệu kỳ vọng (expected output) không bao giờ xuất hiện trong filesystem hoặc không gian bộ nhớ của tiến trình thực thi mã sinh viên. Việc so sánh kết quả được thực hiện hoàn toàn bởi tiến trình quản lý chấm (Grader process) bên ngoài. Tiến trình chạy code sinh viên được khởi tạo với môi trường biến rỗng (`env -i`), không mang bất kỳ secret hoặc token nào.
 
 ### 4.2. Cách tính điểm và xếp hạng
@@ -160,6 +160,7 @@ Sinh viên tiếp tục làm bài sau khi hết hạn để tự trau dồi ki�
   - Loại bỏ các khoảng trắng thừa ở cuối mỗi dòng (`line.trimEnd()`).
   - Loại bỏ các dòng trống thừa ở cuối file.
 - Không tự ý chuẩn hóa hoặc thay đổi bất kỳ nội dung nào khác (chữ hoa/chữ thường, khoảng trắng giữa các từ phải được giữ nguyên).
+- **Quy tắc đơn nghiệm của hidden test:** Mọi test case ẩn trong hệ thống (cả hai chế độ Template mode và Free mode) bắt buộc phải có đáp án duy nhất (đơn nghiệm). Trường hợp bài toán có nhiều nghiệm hợp lệ tương đương nhau, hệ thống yêu cầu phải có bộ chấm tùy biến (custom checker / special judge), tính năng này nằm ngoài phạm vi MVP.
 
 ---
 
@@ -199,6 +200,6 @@ Bảng truy vết ánh xạ từ User Story (US) sang các Phase thực hiện (
    - Hàng đợi in-memory của Grader giới hạn chạy song song tối đa 2 job để tránh nghẽn CPU trên gói Render miễn phí.
 3. **Bảo mật và an toàn dữ liệu:**
    - Mật khẩu người dùng được băm an toàn bằng Argon2id hoặc Bcrypt.
-   - Phiên đăng nhập được quản lý bằng cookie `httpOnly`, `SameSite=Lax`, `Secure`.
+   - Phiên đăng nhập được quản lý bằng cookie `httpOnly`, `SameSite=Lax`, `Secure`; frontend gọi API qua rewrite `/api/*` [CẦN XÁC MINH rewrite /api/* cùng origin giải quyết được cookie theo PROJECT_PLAN 3.5].
    - Kết nối cơ sở dữ liệu bắt buộc qua giao thức mã hóa TLS.
    - Mã nguồn sinh viên chạy trong môi trường bị giới hạn tài nguyên và bị cách ly, không có quyền truy cập mạng hay đọc dữ liệu hệ thống ngoài thư mục làm việc tạm thời.

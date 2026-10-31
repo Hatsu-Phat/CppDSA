@@ -22,16 +22,20 @@ Thư mục này đặc tả hợp đồng tương tác, cấu trúc dữ liệu 
    - Tham số: `const std::vector<int>& nums, int target`
 2. **Lời giải đúng của sinh viên (`solution.cpp`):**
    - Sinh viên tự chọn tên hàm là `timChiSoTong`.
-   - Cài đặt thuật toán hai con trỏ hoặc bảng băm `std::unordered_map` chính xác.
-3. **Khai báo điểm vào (`entry_point.json`):**
+   - Cài đặt thuật toán bảng băm `std::unordered_map` chính xác, kỳ vọng AC mọi test.
+3. **Lời giải thay thế của sinh viên (`solution_alt.cpp`):**
+   - Thuật toán brute-force $O(n^2)$ kiểm tra từng cặp chỉ số `(i, j)` với `i < j`.
+   - Đúng chữ ký hàm và tên hàm theo khai báo `timChiSoTong`, kỳ vọng AC mọi test.
+4. **Khai báo điểm vào (`entry_point.json`):**
    - `{ "entry_type": "function", "entry_name": "timChiSoTong" }`
-4. **Adapter sinh bởi Grader (`adapter.cpp`):**
+5. **Adapter sinh bởi Grader (`adapter.cpp`):**
    - Khai báo forward declaration hàm `std::vector<int> timChiSoTong(const std::vector<int>&, int);`
    - Cung cấp hàm `main()` đọc mảng số nguyên và target từ test case, gọi `timChiSoTong(...)`, định dạng và in kết quả.
-5. **Bộ test ẩn (`tests/`):**
+6. **Bộ test ẩn (`tests/`):**
    - `test1.in` / `test1.out`: Mảng `[2, 7, 11, 15]`, target 9 -> Kết quả `0 1`.
-   - `test2.in` / `test2.out`: Mảng `[1, 3, 5, 7, 9]`, target 10 -> Kết quả `1 3`.
-6. **Ca kiểm thử lỗi:**
+   - `test2.in` / `test2.out`: Mảng `[2, 3, 5, 7, 11]`, target 10 -> Đáp án duy nhất `1 3` (`3 + 7 = 10`).
+   - **Quy tắc đơn nghiệm:** Mọi hidden test trong Free Mode (với bộ so sánh output mặc định của MVP) phải có đúng một đáp án duy nhất; nếu bài toán có nhiều nghiệm hợp lệ thì cần checker riêng (ngoài phạm vi MVP).
+7. **Ca kiểm thử lỗi:**
    - `solution_ce.cpp`: Sinh viên cài đặt hàm `timChiSoTong(int, int)` sai kiểu tham số -> Gây lỗi biên dịch/liên kết (Compilation Error - CE).
    - `solution_wa.cpp`: Sinh viên cài đặt đúng chữ ký nhưng trả về `{0, 0}` -> Gây lỗi sai kết quả (Wrong Answer - WA).
 
