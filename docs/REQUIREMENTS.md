@@ -203,3 +203,36 @@ Bảng truy vết ánh xạ từ User Story (US) sang các Phase thực hiện (
    - Phiên đăng nhập được quản lý bằng cookie `httpOnly`, `SameSite=Lax`, `Secure`; frontend gọi API qua rewrite `/api/*` [CẦN XÁC MINH rewrite /api/* cùng origin giải quyết được cookie theo PROJECT_PLAN 3.5].
    - Kết nối cơ sở dữ liệu bắt buộc qua giao thức mã hóa TLS.
    - Mã nguồn sinh viên chạy trong môi trường bị giới hạn tài nguyên và bị cách ly, không có quyền truy cập mạng hay đọc dữ liệu hệ thống ngoài thư mục làm việc tạm thời.
+
+---
+
+## 7. Ánh xạ yêu cầu MVP (PROJECT_PLAN) → User story
+
+Bảng ánh xạ các yêu cầu MVP từ PROJECT_PLAN sang các User Story tương ứng:
+
+| Mã yêu cầu | User Story tương ứng |
+|---|---|
+| R-01 | US-02, US-03, US-12, US-13 |
+| R-02 | US-01, US-05, US-09 |
+| R-03 | US-01, US-07, US-14 |
+| R-04 | US-02, US-03, US-10, US-11 |
+| R-05 | US-03, US-13 |
+| R-06 | US-04, US-11 |
+| R-07 | US-15, US-16 |
+| R-08 | US-15 |
+| R-09 | US-02, US-11 |
+| R-10 | US-16 |
+| R-11 | US-14, US-15 |
+| R-12 | US-03, US-13 |
+| R-13 | US-14 |
+| R-14 | US-01, US-08, US-09 |
+| R-15 | US-06 |
+| R-16 | US-07, US-14 |
+| R-17 | US-02, US-12 |
+| R-18 | US-12 |
+| R-19 | US-03, US-13 |
+| R-20 | US-04, US-15 |
+| R-21 | US-04, US-15 |
+| R-22 | US-15 |
+| R-23 | US-17 |
+| R-24 | US-14, US-15 |

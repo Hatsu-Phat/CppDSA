@@ -1,0 +1,186 @@
+{
+  "requirements": [
+    {
+      "id": "R-01",
+      "plan": "2",
+      "text": "Ngôn ngữ bài nộp: C++17, biên dịch bằng g++."
+    },
+    {
+      "id": "R-02",
+      "plan": "2",
+      "text": "Vai trò: giảng viên và sinh viên."
+    },
+    {
+      "id": "R-03",
+      "plan": "2",
+      "text": "Quy mô: khoảng 50 sinh viên/lớp hoặc buổi thực hành; tối đa 20 người dùng đồng thời."
+    },
+    {
+      "id": "R-04",
+      "plan": "2",
+      "text": "Có hai chế độ bài tập: có template và không có template."
+    },
+    {
+      "id": "R-05",
+      "plan": "2",
+      "text": "Không yêu cầu sinh viên phải đọc stdin/ghi stdout."
+    },
+    {
+      "id": "R-06",
+      "plan": "2",
+      "text": "Bài tập có thể hiển thị ví dụ/test công khai ngay trong nội dung đề để sinh viên tự kiểm tra. Khi submit, hệ thống chỉ chấm bằng test ẩn."
+    },
+    {
+      "id": "R-07",
+      "plan": "2",
+      "text": "Điểm bài = tỷ lệ test ẩn đạt."
+    },
+    {
+      "id": "R-08",
+      "plan": "2",
+      "text": "So sánh output bỏ khoảng trắng ở cuối mỗi dòng và cuối file; không tự ý chuẩn hóa nội dung khác."
+    },
+    {
+      "id": "R-09",
+      "plan": "2",
+      "text": "Time limit mặc định: 1 giây; memory limit mặc định: 256 MB; giảng viên có thể điều chỉnh theo từng bài."
+    },
+    {
+      "id": "R-10",
+      "plan": "2",
+      "text": "Không giới hạn số lần nộp; lấy điểm cao nhất trước deadline."
+    },
+    {
+      "id": "R-11",
+      "plan": "2",
+      "text": "Cơ chế chạy code dự kiến: biên dịch g++ và chạy trong Docker worker trên Render, dùng user không có quyền cao và giới hạn tài nguyên ở mức tiến trình."
+    },
+    {
+      "id": "R-12",
+      "plan": "2",
+      "text": "Free mode: sinh viên tự đặt tên hàm/lớp; kiểu tham số và kiểu trả về do đề quy định (2026-10-31)."
+    },
+    {
+      "id": "R-13",
+      "plan": "2",
+      "text": "Hàng đợi không polling database — mục 3.4."
+    },
+    {
+      "id": "R-14",
+      "plan": "2",
+      "text": "Đăng nhập email + mật khẩu, import CSV — mục 3.5."
+    },
+    {
+      "id": "R-15",
+      "plan": "2",
+      "text": "Xuất điểm: CSV."
+    },
+    {
+      "id": "R-16",
+      "plan": "2",
+      "text": "Ngưỡng p95 từ submit tới kết quả (grader đã thức): ≤ 10 giây — đề xuất, chỉnh lại sau số đo P2."
+    },
+    {
+      "id": "R-17",
+      "plan": "4.1",
+      "text": "Giảng viên đánh dấu vùng sinh viên được sửa bằng cặp chú thích // STUDENT_BEGIN <tên> / // STUDENT_END; một bài có thể có nhiều vùng (nhiều hàm/lớp). Trình soạn thảo chỉ cho sửa trong vùng."
+    },
+    {
+      "id": "R-18",
+      "plan": "4.1",
+      "text": "Server chỉ nhận nội dung từng vùng và tự ghép với template gốc lưu trong database; không nhận file đầy đủ từ trình duyệt. Thiếu/thừa vùng → từ chối submission."
+    },
+    {
+      "id": "R-19",
+      "plan": "4.2",
+      "text": "Cơ chế \"khai báo điểm vào\": đề bài nêu giao diện chấm gồm kiểu tham số và kiểu trả về (ví dụ int ? (vector<int>&)), không nêu tên. Khi nộp, sinh viên chọn/nhập tên hàm (hoặc lớp + phương thức) của mình ứng với giao diện đó. Hệ thống sinh adapter gọi đúng tên đã khai báo và biên dịch cùng code sinh viên; sai tên hoặc chữ ký → CE kèm thông báo rõ."
+    },
+    {
+      "id": "R-20",
+      "plan": "4.3",
+      "text": "Khi nộp bài, worker chỉ chạy bộ test ẩn do giảng viên quản lý."
+    },
+    {
+      "id": "R-21",
+      "plan": "4.3",
+      "text": "Nội dung test ẩn (đầu vào, dữ liệu kỳ vọng và lời giải tham chiếu nếu có) không được trả về frontend/sinh viên."
+    },
+    {
+      "id": "R-22",
+      "plan": "4.3",
+      "text": "Sinh viên thấy: điểm tổng; verdict từng test ẩn theo số thứ tự (Test 1: AC, Test 2: TLE…); thời gian/bộ nhớ; thông báo CE đã cắt gọn. Không thấy input, expected output hoặc output của test ẩn."
+    },
+    {
+      "id": "R-23",
+      "plan": "4.3",
+      "text": "Sau deadline vẫn cho nộp để luyện tập, đánh dấu \"trễ\", không tính vào điểm."
+    },
+    {
+      "id": "R-24",
+      "plan": "4.3",
+      "text": "Chống gian lận: expected output không bao giờ có trong filesystem hoặc bộ nhớ của tiến trình chạy code sinh viên; việc so sánh thực hiện ở tiến trình grader bên ngoài; tiến trình code sinh viên chạy với môi trường rỗng, không có secret."
+    }
+  ],
+  "requiredDecisionTopics": [
+    {
+      "topic": "hosting",
+      "keywords": ["hosting", "Vercel", "Render"]
+    },
+    {
+      "topic": "database",
+      "keywords": ["cơ sở dữ liệu", "database", "PostgreSQL"]
+    },
+    {
+      "topic": "monorepo",
+      "keywords": ["monorepo", "kho mã nguồn"]
+    },
+    {
+      "topic": "hàng đợi",
+      "keywords": ["hàng đợi", "phân phối công việc chấm"]
+    },
+    {
+      "topic": "xác thực",
+      "keywords": ["xác thực", "quản lý phiên"]
+    },
+    {
+      "topic": "template markers",
+      "keywords": ["đánh dấu vùng", "template"]
+    },
+    {
+      "topic": "free mode điểm vào",
+      "keywords": ["điểm vào", "tự do", "free mode"]
+    },
+    {
+      "topic": "verdict hiển thị",
+      "keywords": ["verdict", "hiển thị kết quả"]
+    },
+    {
+      "topic": "nộp sau deadline",
+      "keywords": ["sau thời hạn", "deadline", "sau deadline"]
+    },
+    {
+      "topic": "so sánh output",
+      "keywords": ["so sánh output", "so sánh kết quả"]
+    },
+    {
+      "topic": "TL/ML",
+      "keywords": ["Time Limit", "Memory Limit", "thời gian", "bộ nhớ", "TL/ML"]
+    },
+    {
+      "topic": "điểm",
+      "keywords": ["tính điểm", "Điểm số"]
+    },
+    {
+      "topic": "CI",
+      "keywords": ["CI", "tích hợp liên tục"]
+    },
+    {
+      "topic": "xuất CSV",
+      "keywords": ["xuất bảng điểm", "CSV"]
+    },
+    {
+      "topic": "ngưỡng p95",
+      "keywords": ["p95", "thời gian xử lý bài nộp"]
+    }
+  ]
+}
