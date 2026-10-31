@@ -59,3 +59,9 @@
 - Tiêu chí P0: (1) agy chạy headless model `gemini-3.8-flash-high` exit=0 ✔ (thấy qua T-0001 vòng 2–3: `RUN ... exit=0 status=SUCCESS report_exists=True`) nhưng `run-task -Task T-0000` ✘; (2) báo cáo model và file quy tắc nạp vào: CHƯA CÓ; (3) AGENTS.md có 0 `<điền>` ✔; (4) remote `origin` = github.com/Hatsu-Phat/CppDSA, `git status` sạch ✔ (main local đi trước origin, chưa push); (5) `git check-ignore .env data/` ra cả hai ✔; (6) `docker version` server 29.8.1 ✔.
 - Kết luận: P0 CHƯA PASS đầy đủ (thiếu 1–2) → cần thêm quyền `read_file` cho `~/.gemini/GEMINI.md`, hoặc người dùng chấp nhận ghi "không xác định được".
 
+### T-0000 vòng 2 (chạy lại sau khi người dùng thêm quyền read_file) — 2026-11-01
+- Lệnh: `run-task.ps1 -Task T-0000` → `RUN task=T-0000 model=gemini-3.8-flash-high exit=0 status=SUCCESS report_exists=True`.
+- Đối chiếu: báo cáo nêu model "Gemini 3.8 Flash (High)"; dòng đầu trích của AGENTS.md, GEMINI.md, ~/.gemini/GEMINI.md khớp với `head -1` do Claude chạy; `git status --short` chỉ có `handoff/reports/T-0000.md` (+ stderr rỗng do harness ghi, đã xóa); branch `main`.
+- Tiêu chí P0: 1 ✔ · 2 ✔ · 3 ✔ · 4 ✔ · 5 ✔ · 6 ✔.
+- Kết luận: P0 PASS.
+
