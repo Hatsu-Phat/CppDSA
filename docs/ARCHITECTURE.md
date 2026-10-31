@@ -33,7 +33,7 @@ flowchart TD
     subgraph Render["Render Cloud (Free Web Services)"]
         BackendAPI["Backend API Service\n(cppdsa-api: Node.js)"]
         GraderWorker["Grader Worker Service\n(cppdsa-grader: Node.js + g++)"]
-        InMemoryQueue["In-Memory Job Queue\n(Tối đa 2 jobs song song)"]
+        InMemoryQueue["In-Memory Job Queue\n(đề xuất 2)"]
     end
 
     subgraph Azure["Azure Cloud (Free 12 Months)"]
@@ -81,7 +81,7 @@ sequenceDiagram
         API-->>FE: { status: "PENDING" / "RUNNING" }
     end
 
-    Note over GR: Lấy job từ hàng đợi (tối đa 2 jobs song song)
+    Note over GR: Lấy job từ hàng đợi (đề xuất 2)
     Note over GR: Biên dịch g++ -std=c++17 trong thư mục tạm
     alt Lỗi biên dịch (CE)
         Note over GR: Thu thập lỗi rút gọn
@@ -106,7 +106,7 @@ sequenceDiagram
 1. **Tiếp nhận bài nộp:** Sinh viên gửi mã nguồn (hoặc nội dung các vùng code) qua giao diện. Next.js proxy yêu cầu tới Backend API.
 2. **Khởi tạo bản ghi:** API xác thực quyền, kiểm tra deadline bài tập, lưu bản ghi vào PostgreSQL với trạng thái `PENDING` và trả về mã bài nộp cho client.
 3. **Điều phối tới Grader:** API chuẩn bị mã nguồn hoàn chỉnh (ghép template hoặc tạo adapter) cùng danh sách test case ẩn, sau đó gửi HTTP POST tới endpoint `/judge` của Grader với header xác thực nội bộ (`X-Grader-Secret`).
-4. **Xếp hàng và thực thi tại Grader:** Grader tiếp nhận job, đưa vào hàng đợi bộ nhớ nội bộ (in-memory queue). Worker chạy tối đa 2 job đồng thời để tránh làm quá tải CPU.
+4. **Xếp hàng và thực thi tại Grader:** Grader tiếp nhận job, đưa vào hàng đợi bộ nhớ nội bộ (in-memory queue). Worker chạy song song giới hạn (đề xuất 2, chỉnh theo số đo P2/P8) để tránh làm quá tải CPU.
 5. **Biên dịch và chấm test:**
    - Grader tạo thư mục làm việc tạm thời trong `/tmp`.
    - Biên dịch bằng `g++ -std=c++17 -O2`. Nếu thất bại, ghi nhận verdict `CE` kèm thông báo lỗi đã được lọc/rút gọn.

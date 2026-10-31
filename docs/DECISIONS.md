@@ -15,7 +15,7 @@ Nguồn: PROJECT_PLAN mục 2 (người dùng 2026-10-31) và mục 3.1.
 ### D-02: Cơ sở dữ liệu chính (Azure Database for PostgreSQL Flexible Server B1MS)
 Lựa chọn: Sử dụng Azure Database for PostgreSQL Flexible Server, gói Burstable B1MS với 32 GB dữ liệu và 32 GB sao lưu trong chương trình 12 tháng miễn phí [CẦN XÁC MINH ngày bắt đầu 12 tháng free của Azure].
 Lý do: Cung cấp 750 giờ/tháng đủ để chạy liên tục 24/7 mà không bị tự động dừng (auto-pause); không bị giới hạn vCore-giây; PostgreSQL tương thích hoàn hảo với hệ sinh thái Node.js/TypeScript và dễ dàng phát triển local qua Docker; firewall mở cho IP Render [CẦN XÁC MINH Render cung cấp outbound IP cho free service].
-Phương án loại: Azure SQL Database Free Tier (bị auto-pause sau 15 phút, giới hạn 100.000 vCore-giây); Render PostgreSQL Free (bị xóa dữ liệu sau 90 ngày).
+Phương án loại: Azure SQL Database Free Tier (bị auto-pause sau 15 phút, giới hạn 100.000 vCore-giây); Render PostgreSQL Free.
 Nguồn: PROJECT_PLAN mục 2, 3.2 (người dùng 2026-10-31).
 
 ---
@@ -29,7 +29,7 @@ Nguồn: PROJECT_PLAN mục 2, 3.0.
 ---
 
 ### D-04: Cơ chế hàng đợi và phân phối công việc chấm bài
-Lựa chọn: API đẩy job qua HTTP tới Grader; Grader quản lý hàng đợi trong bộ nhớ (in-memory queue), chạy tối đa 2 job đồng thời và gửi kết quả về API qua HTTP callback kèm secret token; phục hồi bằng cách API quét các submission PENDING/RUNNING quá 2 phút khi nhận request.
+Lựa chọn: API đẩy job qua HTTP tới Grader; Grader quản lý hàng đợi trong bộ nhớ (in-memory queue), chạy song song giới hạn (đề xuất 2, chỉnh theo số đo P2/P8) và gửi kết quả về API qua HTTP callback kèm secret token; phục hồi bằng cách API quét các submission PENDING/RUNNING quá 2 phút khi nhận request.
 Lý do: Tránh việc polling liên tục làm quá tải database PostgreSQL B1MS có tài nguyên thấp [CẦN XÁC MINH giới hạn kết nối của B1MS]; Render không hỗ trợ background worker ở gói miễn phí nên grader được cấu hình như một web service.
 Phương án loại: Sử dụng Redis/RabbitMQ chuyên dụng (tốn chi phí/hạ tầng phụ); worker polling trực tiếp vào database PostgreSQL.
 Nguồn: PROJECT_PLAN mục 2, 3.3, 3.4.

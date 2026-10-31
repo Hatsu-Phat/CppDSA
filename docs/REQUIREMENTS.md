@@ -197,7 +197,7 @@ Bảng truy vết ánh xạ từ User Story (US) sang các Phase thực hiện (
    - Ngưỡng thời gian xử lý p95 ≤ 10 giây từ khi submit đến khi có kết quả khi Grader đã thức (ngưỡng đề xuất từ PROJECT_PLAN mục 2, 4.3 và 9).
 2. **Độ tin cậy và khôi phục sự cố:**
    - Nếu worker bị restart làm mất job, hệ thống API tự động quét các submission ở trạng thái `PENDING`/`RUNNING` quá 2 phút và gửi lại tối đa 2 lần trước khi gán `SYSTEM_ERROR` (PROJECT_PLAN mục 3.4).
-   - Hàng đợi in-memory của Grader giới hạn chạy song song tối đa 2 job để tránh nghẽn CPU trên gói Render miễn phí.
+   - Hàng đợi in-memory của Grader chạy song song giới hạn (đề xuất 2, chỉnh theo số đo P2/P8) để tránh nghẽn CPU trên gói Render miễn phí.
 3. **Bảo mật và an toàn dữ liệu:**
    - Mật khẩu người dùng được băm an toàn bằng Argon2id hoặc Bcrypt.
    - Phiên đăng nhập được quản lý bằng cookie `httpOnly`, `SameSite=Lax`, `Secure`; frontend gọi API qua rewrite `/api/*` [CẦN XÁC MINH rewrite /api/* cùng origin giải quyết được cookie theo PROJECT_PLAN 3.5].
