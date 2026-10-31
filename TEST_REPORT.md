@@ -82,3 +82,18 @@
   - `run-examples.mjs`: 5/5 mutation sai bị bắt (exit 1): template sai, free hợp lệ thay bằng WA, CE biên dịch được, expected đổi, WA thành đúng. Lọt 1: thêm test3 (expected sai) vẫn exit 0 vì danh sách test hardcode. Bản đối chứng exit 0.
 - Kết luận: FAIL (test chưa đủ để chứng minh tiêu chí; tài liệu không phát hiện lỗi nội dung) → T-0002 (làm chặt checker + độ phủ MVP + self-test mutation). Ghi chú: P1 đã dùng 3 vòng ở T-0001; người dùng yêu cầu rõ giao task sửa khi FAIL.
 
+### T-0002 — làm chặt checker P1 — 2026-11-01
+- Lệnh (Claude chạy lại, Docker `node:22-bookworm`): check-docs → exit=0 (17 US, 24 yêu cầu MVP ánh xạ, 15 chủ đề quyết định, 16 D-xx, 14 tag); `--self-test` → exit=0 (11 fixture lỗi bị bắt + `valid` PASS); run-examples → exit=0 (8/8); run-examples `--self-test` → exit=0 (6/6 mutation bị phát hiện, bản gốc PASS).
+- Mutation độc lập của Claude (scratchpad, không dùng fixture của agy):
+  - Bộ cũ `mutate_docs.py`: 6/6 exit=1 (trước T-0002: 0/6); đối chứng exit=0.
+  - Bộ mới agy chưa thấy `mutate_docs2.py`: xóa US-09; xóa dòng R-01; AC US-03 rỗng; đổi tên heading D-13 (CI); `chưa chốt` chữ thường → 5/5 exit=1 với thông báo đúng luật; đối chứng exit=0.
+  - `mutate_examples.py`: 6/6 exit=1 (gồm test3 trước đây lọt); đối chứng exit=0.
+- `mvp-requirements.json`: 24 mục, mọi `text` trùng nguyên văn PROJECT_PLAN (R-17, R-19 chỉ khác backtick/tag); hosting/DB/CI được kiểm qua `requiredDecisionTopics`. Không phủ riêng stack TypeScript/Next.js (không chặn).
+- Phạm vi: chỉ chạm `tests/p1/**`, `docs/REQUIREMENTS.md` (chỉ thêm 33 dòng, 0 dòng xóa), báo cáo.
+- Kết luận: PASS.
+
+### Phase P1 — nghiệm thu lại — 2026-11-01
+- Tiêu chí 1–3, 5 ✔ (như mục trước); 4 hợp đồng chấm hai mode ✔ kỹ thuật; 6 rà chéo MVP ✔ nay tự động (24 R-xx → US → phase P2–P10, có mutation chứng minh); 7 người dùng duyệt: CHƯA.
+- Đánh giá test: checker và runner bắt được 17/17 mutation độc lập, không báo lỗi bản đúng.
+- Kết luận: PASS kỹ thuật → chờ người dùng duyệt để mở P2/P3.
+
