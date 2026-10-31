@@ -1,0 +1,8 @@
+{
+  "id": "17_attack_forkbomb",
+  "name": "Attack - Fork Bomb",
+  "mode": "standard",
+  "expectedVerdict": "TLE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

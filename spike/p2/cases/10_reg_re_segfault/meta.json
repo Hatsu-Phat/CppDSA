@@ -1,0 +1,8 @@
+{
+  "id": "10_reg_re_segfault",
+  "name": "Standard RE - Segmentation Fault",
+  "mode": "standard",
+  "expectedVerdict": "RE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

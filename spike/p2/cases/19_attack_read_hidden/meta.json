@@ -1,0 +1,11 @@
+{
+  "id": "19_attack_read_hidden",
+  "name": "Attack - Read Hidden Test Secrets",
+  "mode": "standard",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertStdoutNotContains": [
+    "super_secret_hidden_flag_12345"
+  ]
+}

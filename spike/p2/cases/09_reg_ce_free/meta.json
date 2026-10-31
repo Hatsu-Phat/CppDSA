@@ -1,0 +1,8 @@
+{
+  "id": "09_reg_ce_free",
+  "name": "Free Mode CE - Signature Mismatch",
+  "mode": "free",
+  "expectedVerdict": "CE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

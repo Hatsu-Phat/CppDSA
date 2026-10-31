@@ -1,0 +1,12 @@
+{
+  "id": "25_cheat_template_inspect",
+  "name": "Cheat Template - Inspect Hidden Tests",
+  "mode": "template",
+  "regionName": "reverseLinkedList",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertStdoutNotContains": [
+    "super_secret_hidden_flag_12345"
+  ]
+}

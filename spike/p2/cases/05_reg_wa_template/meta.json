@@ -1,0 +1,9 @@
+{
+  "id": "05_reg_wa_template",
+  "name": "Template WA - Unreversed List",
+  "mode": "template",
+  "regionName": "reverseLinkedList",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

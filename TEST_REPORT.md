@@ -97,3 +97,41 @@
 - Đánh giá test: checker và runner bắt được 17/17 mutation độc lập, không báo lỗi bản đúng.
 - Kết luận: PASS kỹ thuật → chờ người dùng duyệt để mở P2/P3.
 
+### T-0003 vòng 1 — P2 spike sandbox local — 2026-11-01
+- Môi trường: Docker Desktop 29.8.1; image `cppdsa-spike` (node:22-bookworm + g++ + libseccomp); branch `task/T-0003`.
+- Lệnh (Claude chạy lại): `docker build -t cppdsa-spike spike/p2` OK; `docker run --rm cppdsa-spike node run-suite.mjs` → exit=0, 27/27 PASS (AC/WA/CE/RE mỗi loại 3–4; TLE cpu 1064 ms, sleep 1063 ms; MLE; fork bomb→TLE; worker recovery PASS); `node bench.mjs` → 10 lần, mean 256.70 ms, SD 9.26 ms, (max−min)/mean 9.74%.
+- Probe độc lập (`handoff/tasks/T-0003-probes/`, chạy `--memory 1g`):
+  - q1 đọc `/app/cases/*/expected.txt` + `/app/run-suite.mjs`: LEAK (WA).
+  - q3 ghi `/home/sandbox`, `/var/tmp`, `/run/lock`, `/var/lock`: LEAK (WA).
+  - q4 cháu `setsid()` giữ pipe: runner TREO > 10 phút (phải `docker kill`).
+  - q4b+q5 tiến trình sandbox sống sót sau bài nộp: LEAK (WA).
+  - q6 800 MB ra stderr: runner chết `ERR_STRING_TOO_LONG`.
+  - q7 đọc `/proc/1/environ`, `/proc/<ppid>/environ`: SAFE (AC).
+  - q8 16 tiến trình × 200–300 MB: TLE thay vì MLE; worker sống.
+  - c1 `#include "/app/hidden_tests/secret.txt"`: g++ chạy bằng root → thông báo CE chứa `super_secret_hidden_flag_12345`.
+- Đánh giá test agy: ca tấn công chỉ kiểm file mồi được bảo vệ riêng, không kiểm expected thật, thoát process group, stderr, bước biên dịch → test không chứng minh tiêu chí 4, 8.
+- Tiêu chí P2 (local): 1 ✔ · 2 ✔ · 3 ✔ (q8 lệch verdict, nhẹ) · 4 ✘ (q3, q4, q6, c1) · 5 ✔ local, Render CHƯA · 6 ✘ (runner treo/chết) · 7 CHƯA (Render) · 8 ✘ (q1, c1).
+- Kết luận: FAIL → T-0003 vòng 2/3.
+
+### T-0003 vòng 2–3 — 2026-11-01
+- Vòng 2: agy bị ngắt 2 lần ("root agent idle; waiting … background task" — lệnh >10 s bị đẩy nền); Claude tự build và chạy lại trên trạng thái file của agy.
+  - `docker build -t cppdsa-spike spike/p2` OK; `docker run --rm cppdsa-spike node run-suite.mjs` → exit=0, 38/38 PASS, 15131 ms (tự kết thúc, không treo).
+  - Probe gốc của Claude (bản scratchpad, không phải bản agy chép), `--memory 1g`: q1, q3, q4 (setsid gốc), q4b, q5, q6, q7 → SAFE/AC; q8 → TLE (nhẹ, chấp nhận).
+  - Probe mới chưa đưa cho agy: tiến trình respawn đổi PID liên tục + kiểm tiến trình sống sót → SAFE; CE `#include` expected thật + secret → CE, thông báo không chứa secret/expected.
+  - `node bench.mjs` (Claude): mean 254.20 ms, SD 8.70 ms (3.42%), (max−min)/mean 9.44%.
+- Vòng 3 (chỉ báo cáo): `reports/P2_spike.md` cập nhật; Claude tính lại thống kê bench từ 10 lần đo liệt kê trong báo cáo: mean 256.70, SD 11.25, (max−min)/mean 12.08% — khớp số báo cáo. Không sửa code.
+- Kết luận T-0003: PASS.
+
+### Phase P2 — nghiệm thu (accept-phase) — 2026-11-01
+- Tiêu chí PROJECT_PLAN §9 P2:
+  1. ≥ 12 chương trình AC/WA/CE/RE phân loại đúng 100% ✔ (13 ca thường, 3 mỗi loại + RE exit code; 38/38).
+  2. Vòng lặp vô hạn dừng ≤ TL + 0,5 s, TLE ✔ (cpu ~1064 ms, sleep ~1063 ms, TL 1000 ms).
+  3. Vượt ML → MLE, worker sống ✔ (ca đơn tiến trình); rủi ro: đa tiến trình → TLE (ghi trong báo cáo).
+  4. Fork bomb, ghi ngoài, mạng, output khổng lồ bị chặn ✔ (sau vòng 2; kiểm cả hiệu ứng thật bằng probe độc lập).
+  5. Container không privileged ✔ local (`docker run --rm` mặc định); Render thật: CHƯA (T-0004).
+  6. Giới hạn tài nguyên áp dụng được ✔ trên Docker Desktop; trên Render: CHƯA (T-0004).
+  7. Bench 10 lần + cold start trên Render free: CHƯA (T-0004); local đã đo (9.44–12.08% < 20%).
+  8. Không đọc được expected, không giả được kết quả, cả hai mode ✔ (q1, c1, ca cheat template/free, ca spoof).
+- Đánh giá test agy: vòng 1 không đủ (chỉ kiểm file mồi); vòng 2 đã gồm probe độc lập và hậu kiểm hiệu ứng thật; Claude thêm 3 probe chưa thấy đều SAFE → test đủ cho phạm vi local.
+- Kết luận: PASS phần local (1–4, 6 local, 8). Tiêu chí 5, 7 (Render) chuyển T-0004, chờ phiên có connector Render + push GitHub. Theo ủy quyền tự động của người dùng, chuyển sang P3 (không phụ thuộc kết quả Render); nếu T-0004 FAIL theo PROJECT_PLAN 3.3 thì dừng và báo người dùng.
+

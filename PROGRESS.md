@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P2
+CURRENT_PHASE: P3
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -21,3 +21,5 @@ CURRENT_PHASE: P2
 - 2026-11-01: accept-phase P1 → FAIL do test: check-docs để lọt 6/6 mutation, độ phủ MVP chưa tự động hóa; run-examples ổn (lọt 1: test hardcode). Tài liệu đúng nội dung. Giao T-0002 trên branch `task/T-0002`.
 - 2026-11-01: T-0002 PASS (checker bắt 17/17 mutation độc lập). P1 PASS kỹ thuật, chờ người dùng duyệt (hợp đồng chấm hai mode) trước khi mở P2/P3. Merge `task/T-0002` → main.
 - 2026-11-01: người dùng duyệt P1 (gồm hợp đồng chấm hai mode). Bắt đầu P2. Chia 2 task: T-0003 spike sandbox local trong Docker không privileged (tiêu chí 1–4, 6, 8; 5 ở local); T-0004 (sau T-0003 PASS) thử trên Render free + bench (tiêu chí 5, 7) — cần người dùng cho phép deploy.
+- 2026-11-01: người dùng cấp quyền tự động 6 giờ (tự giao task, kiểm thử, sang phase khi không còn lỗi). T-0003 vòng 1 FAIL (probe độc lập: runner treo bởi setsid, crash bởi stderr flood, CE lộ secret do biên dịch bằng root, đọc được expected, ghi file ngoài). Giao vòng 2.
+- 2026-11-01: T-0003 PASS (vòng 3). P2 PASS phần local; tiêu chí 5, 7 (Render) → T-0004 chờ connector Render (phiên song song) + push. Theo ủy quyền tự động, bắt đầu P3 (T-0005). Quyết định kỹ thuật P3 (Fastify, Vitest, ESLint+Prettier, node-pg-migrate, postgres:16 [CẦN XÁC MINH major Azure]) ghi trong T-0005.

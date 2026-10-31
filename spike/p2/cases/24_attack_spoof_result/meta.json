@@ -1,0 +1,11 @@
+{
+  "id": "24_attack_spoof_result",
+  "name": "Attack - Fake Verdict and Result File",
+  "mode": "standard",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertFilesDoNotExist": [
+    "/app/result.json"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "08_reg_ce_template",
+  "name": "Template CE - Undefined Variable",
+  "mode": "template",
+  "regionName": "reverseLinkedList",
+  "expectedVerdict": "CE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

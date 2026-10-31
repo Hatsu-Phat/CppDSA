@@ -1,0 +1,8 @@
+{
+  "id": "01_reg_ac_standard",
+  "name": "Standard AC - Addition",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

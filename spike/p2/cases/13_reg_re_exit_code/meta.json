@@ -1,0 +1,8 @@
+{
+  "id": "13_reg_re_exit_code",
+  "name": "Standard RE - Non-Zero Exit Code",
+  "mode": "standard",
+  "expectedVerdict": "RE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

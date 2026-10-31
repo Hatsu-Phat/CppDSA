@@ -1,0 +1,8 @@
+{
+  "id": "q4b_escape_closefd",
+  "name": "Probe q4b - Escape setsid and Close FDs",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

@@ -1,0 +1,8 @@
+{
+  "id": "14_tle_cpu",
+  "name": "TLE - CPU Bound Infinite Loop",
+  "mode": "standard",
+  "expectedVerdict": "TLE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

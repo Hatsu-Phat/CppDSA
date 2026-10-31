@@ -1,0 +1,8 @@
+{
+  "id": "16_mle_alloc",
+  "name": "MLE - Allocate and Touch > ML",
+  "mode": "standard",
+  "expectedVerdict": "MLE",
+  "timeLimitMs": 2000,
+  "memoryLimitBytes": 67108864
+}

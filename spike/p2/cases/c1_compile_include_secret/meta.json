@@ -1,0 +1,11 @@
+{
+  "id": "c1_compile_include_secret",
+  "name": "Probe c1 - Include Hidden Secret at Compile Time",
+  "mode": "standard",
+  "expectedVerdict": "CE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertCompileOutputNotContains": [
+    "super_secret_hidden_flag_12345"
+  ]
+}

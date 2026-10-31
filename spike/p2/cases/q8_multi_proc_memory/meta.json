@@ -1,0 +1,11 @@
+{
+  "id": "q8_multi_proc_memory",
+  "name": "Probe q8 - Multi-process Memory Allocation",
+  "mode": "standard",
+  "expectedVerdict": [
+    "TLE",
+    "MLE"
+  ],
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

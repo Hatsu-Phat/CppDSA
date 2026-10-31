@@ -1,0 +1,15 @@
+{
+  "id": "q3_persist_write",
+  "name": "Probe q3 - Persist Write Across Runs",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertFilesDoNotExist": [
+    "/home/sandbox/persist.txt",
+    "/dev/shm/persist.txt",
+    "/var/tmp/persist.txt",
+    "/run/lock/persist.txt",
+    "/dev/mqueue/persist.txt"
+  ]
+}

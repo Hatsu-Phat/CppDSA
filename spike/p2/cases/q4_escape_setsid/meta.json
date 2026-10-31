@@ -1,0 +1,8 @@
+{
+  "id": "q4_escape_setsid",
+  "name": "Probe q4 - Escape Process Group setsid",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

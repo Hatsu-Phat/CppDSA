@@ -1,0 +1,8 @@
+{
+  "id": "q7_proc_environ",
+  "name": "Probe q7 - Proc Environ Secret Leak",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}
