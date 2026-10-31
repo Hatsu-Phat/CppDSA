@@ -53,3 +53,9 @@
 - Còn mở (không chặn P1): 7 điểm `[CẦN XÁC MINH]` cần người dùng/thực nghiệm (ngày free Azure, region/outbound IP Render, giới hạn kết nối B1MS, Vercel Hobby, GitHub Actions, rewrite cookie); P0/T-0000 chưa chạy.
 - Kết luận: PASS kỹ thuật (3 vòng) → chờ người dùng duyệt để sang P2/P3.
 
+### T-0000 / Phase P0 — 2026-11-01
+- Không tìm thấy kết quả T-0000 của CppDSA từ phiên Claude desktop: không có `handoff/reports/T-0000.md` ở local, trên `origin` (chỉ có commit 99b1dec), hay trong log agy (2 phiên T-0000 trong log đều thuộc `H:\lab\AIVDetection`).
+- Claude chạy lại T-0000 hai lần trên máy này: đều bị hủy vì quyền headless (lần 1 dùng `Get-Content`; lần 2 cần `read_file` cho `~/.gemini/GEMINI.md` ngoài workspace). Trước khi bị hủy, agy đã chạy được `git status --short` và `git rev-parse`.
+- Tiêu chí P0: (1) agy chạy headless model `gemini-3.8-flash-high` exit=0 ✔ (thấy qua T-0001 vòng 2–3: `RUN ... exit=0 status=SUCCESS report_exists=True`) nhưng `run-task -Task T-0000` ✘; (2) báo cáo model và file quy tắc nạp vào: CHƯA CÓ; (3) AGENTS.md có 0 `<điền>` ✔; (4) remote `origin` = github.com/Hatsu-Phat/CppDSA, `git status` sạch ✔ (main local đi trước origin, chưa push); (5) `git check-ignore .env data/` ra cả hai ✔; (6) `docker version` server 29.8.1 ✔.
+- Kết luận: P0 CHƯA PASS đầy đủ (thiếu 1–2) → cần thêm quyền `read_file` cho `~/.gemini/GEMINI.md`, hoặc người dùng chấp nhận ghi "không xác định được".
+
