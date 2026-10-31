@@ -1,0 +1,29 @@
+# Dependencies / build
+node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+.turbo/
+.vercel/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Data (không đưa lên repo)
+data/
+
+# Runtime / logs
+*.log
+tmp/
+handoff/reports/*.run.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
