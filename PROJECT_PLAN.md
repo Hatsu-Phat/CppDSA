@@ -1,6 +1,6 @@
 # PROJECT_PLAN — CppDSA
 
-Trạng thái: bản nháp v3 (2026-10-31). Claude bổ sung đề xuất theo ủy quyền của người dùng (Azure chi phí thấp nhất, monorepo, Render, hàng đợi, xác thực, template, chống gian lận); chờ người dùng duyệt.
+Trạng thái: bản v6 (2026-10-31) — ĐÃ DUYỆT. Hosting Vercel + Render; database Azure PostgreSQL B1MS free 12 tháng; free mode đã chốt; repo GitHub đã tạo.
 Ký hiệu: `[CHƯA CHỐT]` = cần người dùng quyết định; `[CẦN XÁC MINH]` = phải kiểm tra bằng tài liệu hoặc thử nghiệm thực tế; `[ĐỀ XUẤT]` = phương án tôi đề nghị, chưa coi là quyết định cuối cùng.
 
 ## 1. Mục tiêu và phạm vi
@@ -15,7 +15,7 @@ Quy mô mục tiêu:
 ## 2. Các quyết định đã được người dùng xác nhận
 
 - Workflow phát triển: Claude Code điều phối, lập task, review và nghiệm thu; Antigravity (`agy`, model `gemini-3.8-flash-high`) viết code, viết test và tự sửa trong phạm vi task.
-- Nền tảng triển khai: Vercel và Render.
+- Nền tảng triển khai: Vercel và Render. Người dùng đã so sánh với phương án 1 Azure Linux VM và chốt giữ Vercel + Render (2026-10-31).
 - Phân bổ chạy ứng dụng: frontend trên Vercel; backend API và worker chấm bài chạy trên Render. Biên dịch/chạy code sinh viên thuộc backend Render, không chạy trên Vercel.
 - Stack theo phương án đã đồng ý: TypeScript; Next.js cho frontend; Node.js cho API và worker.
 - Ngôn ngữ bài nộp: C++17, biên dịch bằng g++.
@@ -30,11 +30,16 @@ Quy mô mục tiêu:
 - Không giới hạn số lần nộp; lấy điểm cao nhất trước deadline.
 - Cơ chế chạy code dự kiến: biên dịch g++ và chạy trong Docker worker trên Render, dùng user không có quyền cao và giới hạn tài nguyên ở mức tiến trình. Phương án này phải qua kiểm chứng P2; không được coi Docker/user không quyền là bảo đảm sandbox an toàn tuyệt đối.
 
+- Free mode: sinh viên tự đặt tên hàm/lớp; kiểu tham số và kiểu trả về do đề quy định (2026-10-31).
+- Chỉ dùng tài nguyên miễn phí của Render; không trả phí kể cả khi số đo cho thấy gói free chậm (2026-10-31).
+- Chấp nhận việc dịch vụ có thể tạm ngừng khi chạm hạn mức miễn phí, thay vì phát sinh phí (2026-10-31).
+- Repo GitHub `Hatsu-Phat/CppDSA`, branch `main` đã push commit đầu (2026-10-31).
+
 ### Quyết định Claude đề xuất theo ủy quyền của người dùng (2026-10-31)
 
 Người dùng giao Claude tự đề xuất các phần chưa chốt và yêu cầu Azure tốn ít credit nhất. Các mục sau là mặc định; người dùng có thể bác bỏ khi duyệt roadmap.
 - Một repo GitHub duy nhất (monorepo) cho cả Vercel và Render — mục 3.0.
-- Azure SQL Database free tier, AutoPause, thiết kế để database tự pause — mục 3.2.
+- Azure Database for PostgreSQL Flexible Server, Burstable B1MS, nằm trong gói free 12 tháng của subscription — mục 3.2.
 - Render: 2 free web service (API, grader) — mục 3.3.
 - Hàng đợi không polling database — mục 3.4.
 - Đăng nhập email + mật khẩu, import CSV — mục 3.5.
@@ -61,42 +66,39 @@ Người dùng giao Claude tự đề xuất các phần chưa chốt và yêu c
 | Frontend | Vercel (gói Hobby, miễn phí) | Giao diện giảng viên và sinh viên; gọi API qua rewrite `/api/*` |
 | Backend API | Render free web service (Docker) | Xác thực, phân quyền, quản lý lớp/bài/test/submission; thành phần duy nhất kết nối database |
 | Grader | Render free web service (Docker) | Nhận job từ API (xác thực bằng secret), biên dịch g++, chạy và chấm; không có credential database |
-| Database | Azure SQL Database free tier (serverless, AutoPause) | Tài khoản, lớp, bài, template, test ẩn, submission, kết quả |
+| Database | Azure Database for PostgreSQL Flexible Server (Burstable B1MS, free 12 tháng) | Tài khoản, lớp, bài, template, test ẩn, submission, kết quả |
 
 Frontend không kết nối trực tiếp tới database.
 
 ### 3.2. Azure — cấu hình tốn ít credit nhất
 
-Mục tiêu: không phát sinh phí; 100 USD credit chỉ dùng khi người dùng tự đồng ý.
-- 1 logical server + 1 database free tier (General Purpose serverless, áp dụng free offer).
-- Khi hết hạn mức: **AutoPause** (database ngừng tới đầu tháng sau, không tính phí). Không chọn BillOverUsage vì Microsoft ghi không chuyển lại AutoPause được.
-- vCore tối đa: mức thấp nhất portal cho phép với free tier; vCore tối thiểu 0,5 (mặc định). `[CẦN XÁC MINH các mức cho phép khi tạo]`
-- Auto-pause sau 15 phút không hoạt động (cố định với free tier).
-- Không bật dịch vụ phụ có thể tính phí: geo-replication, long-term backup retention, Microsoft Defender for SQL, private endpoint. Dùng public endpoint + firewall + TLS. `[CẦN XÁC MINH mục nào tính phí khi tạo]`
-- Region: chọn gần region Render (đề xuất Southeast Asia nếu Render dùng Singapore). Region của free database đầu tiên không đổi được. `[CẦN XÁC MINH Render có region Singapore cho free]`
-- Cảnh báo: metric alert "Free amount remaining" ≤ 10.000 vCore-giây; budget alert cho subscription ở mức 1 USD.
-- Firewall: chỉ mở cho outbound IP của Render. `[CẦN XÁC MINH Render cung cấp outbound IP cho free service]`
-- Tài khoản database: user riêng cho app chỉ có quyền đọc/ghi dữ liệu; tài khoản admin chỉ dùng cho migration.
+Căn cứ: ảnh portal người dùng gửi (2026-10-31) liệt kê trong "Services that include monthly free amounts for 12 months": **Azure Database for PostgreSQL — 750 giờ Flexible Server Burstable B1MS, 32 GB storage, 32 GB backup storage mỗi tháng**; vượt mức thì tính giá pay-as-you-go.
 
-Ngân sách vCore-giây (ước tính từ tài liệu, chưa đo):
-- Khi online, mức dùng dưới min được tính theo min → ≥ 0,5 vCore mỗi giây. 100.000 vCore-giây ≈ 55 giờ online/tháng nếu chạy ở mức min.
-- Mỗi lần database thức dậy tốn tối thiểu 15 phút online (≈ 450 vCore-giây ở 0,5 vCore).
-- Ví dụ 4 buổi × 3 giờ/tháng ≈ 13 giờ online (kể cả 15 phút chờ pause) → khoảng 23.400–46.800 vCore-giây nếu dùng trung bình 0,5–1 vCore. Phần còn lại cho sinh viên làm bài ngoài giờ.
-- Rủi ro: sinh viên dùng rải rác cả ngày làm database thức liên tục → có thể hết hạn mức giữa tháng. Đo thực tế ở P8; nếu không đủ, người dùng chọn: giới hạn khung giờ mở hệ thống, chấp nhận trả phí phần vượt (trừ credit), hoặc đổi database.
+Lựa chọn: **PostgreSQL Flexible Server B1MS** thay cho Azure SQL Database free tier.
+- Lý do: 750 giờ/tháng đủ cho 1 server chạy 24/7 (tháng dài nhất 744 giờ) → không phải tự pause, không có hạn mức vCore-giây, không giới hạn kết nối mở; PostgreSQL chạy local bằng Docker dễ, nhiều thư viện Node.js hỗ trợ.
+- Đánh đổi: free chỉ trong 12 tháng kể từ ngày đăng ký subscription `[CẦN XÁC MINH ngày bắt đầu trong Cost Management]`; sau đó tính phí → trước khi hết hạn phải quyết định chuyển database. Azure SQL free tier (mục 11) giữ làm phương án dự phòng.
 
-Thiết kế bắt buộc để database pause được (Microsoft: kết nối đang mở ngăn auto-pause):
-- API dùng pool kết nối min = 0, đóng kết nối rảnh sau ≤ 60 giây.
+Cấu hình khi tạo (mọi mục khác để mặc định thấp nhất):
+- Đúng 1 server, compute **Burstable B1MS**; storage **32 GiB**; tắt High Availability; không tạo read replica; backup retention 7 ngày, không geo-redundant backup. Mỗi mục bật thêm có thể làm vượt mức free hoặc nhân đôi giờ dùng.
+- Không tạo server thứ hai cho dev/staging trên Azure: dev dùng PostgreSQL trong Docker ở máy local; staging và production dùng chung server này nhưng khác database.
+- Trước khi bấm Create: màn hình ước tính chi phí phải hiện 0 USD hoặc ghi rõ phần được free; nếu không → dừng, báo Claude. `[CẦN XÁC MINH khi tạo]`
+- Region: gần region Render (đề xuất Southeast Asia nếu Render dùng Singapore). `[CẦN XÁC MINH Render có region Singapore cho free]`
+- Truy cập: public access + firewall chỉ mở cho outbound IP của Render (`[CẦN XÁC MINH Render cung cấp outbound IP cho free service]`) và IP máy người dùng khi cần migration; bắt buộc TLS.
+- Tài khoản database: role riêng cho app chỉ có quyền đọc/ghi bảng; role admin chỉ dùng cho migration.
+- Cảnh báo: budget alert cho subscription ở mức 1 USD; theo dõi dung lượng (cảnh báo khi > 80% của 32 GB).
+
+Thiết kế ứng dụng:
+- Pool kết nối nhỏ (đề xuất tối đa 5) vì B1MS có tài nguyên thấp `[CẦN XÁC MINH giới hạn kết nối của B1MS]`.
 - Healthcheck `/healthz` của API không chạm database.
-- Không có job định kỳ/polling chạm database.
-- Có retry khi database đang resume; giao diện hiển thị "hệ thống đang khởi động" thay vì lỗi.
-- Không để công cụ quản trị (SSMS, Azure Data Studio) giữ kết nối khi không dùng.
+- Có retry khi kết nối lỗi tạm thời.
 
 ### 3.3. Render
 
 - 2 free web service: `cppdsa-api`, `cppdsa-grader` (Docker). Theo tài liệu Render, background worker và private service không có gói free → grader là web service, chỉ nhận request có secret từ API.
 - Free web service ngủ sau 15 phút không có traffic, thức lại mất khoảng 1 phút; 750 giờ free/workspace/tháng, service đang ngủ không tính giờ.
 - Trước buổi thực hành, giảng viên bấm "Khởi động hệ thống" (API gọi grader và database) vài phút trước giờ.
-- CPU/RAM của free instance chưa xác minh → P2 đo độ ổn định thời gian chạy. Nếu không đạt, đề xuất nâng riêng grader lên gói trả phí nhỏ nhất (người dùng duyệt chi phí).
+- Người dùng không chấp nhận trả phí: chỉ dùng free web service. CPU/RAM của free instance chưa xác minh → P2 đo. Nếu chậm hoặc dao động: giảm số job chạy song song (có thể xuống 1); tính TL theo hệ số so với thời gian lời giải mẫu đo trên chính grader; tăng TL mặc định; chấp nhận thời gian chờ dài hơn và ghi rõ trong báo cáo.
+- Nếu P2 cho thấy Render free không chạy được grader ở mức chấp nhận được (không cách ly được code sinh viên hoặc TL không ổn định dù đã giảm song song), dừng và báo người dùng kèm số đo; không tự đổi nền tảng.
 
 ### 3.4. Luồng chấm và hàng đợi (không polling database)
 
@@ -131,8 +133,8 @@ Thiết kế bắt buộc để database pause được (Microsoft: kết nối 
 - Sinh viên tự viết lời giải, tự định nghĩa tên hàm/lớp và cách tổ chức code; hệ thống không áp đặt template hoặc tên hàm/lớp cố định.
 - Không bắt buộc mô hình stdin/stdout theo yêu cầu hiện tại.
 - `[ĐÃ CHỐT]` Sinh viên được tự đặt tên; không bắt buộc dùng tên hàm/lớp do đề bài hoặc hệ thống quy định.
-- `[ĐỀ XUẤT — người dùng phải duyệt ví dụ E2E ở P1 trước P4]` Cơ chế "khai báo điểm vào": đề bài nêu giao diện chấm gồm kiểu tham số và kiểu trả về (ví dụ `int ? (vector<int>&)`), không nêu tên. Khi nộp, sinh viên chọn/nhập tên hàm (hoặc lớp + phương thức) của mình ứng với giao diện đó. Hệ thống sinh adapter gọi đúng tên đã khai báo và biên dịch cùng code sinh viên; sai tên hoặc chữ ký → CE kèm thông báo rõ.
-- Hệ quả cần người dùng chấp nhận: tên tự do nhưng kiểu tham số/trả về vẫn do đề quy định — không có cách tự động gọi một hàm chưa biết cả tên lẫn chữ ký mà không dùng stdin/stdout. Nếu không chấp nhận, P1 trình bày phương án khác; không tự đổi yêu cầu.
+- `[ĐÃ CHỐT 2026-10-31; P1 vẫn phải có ví dụ E2E làm hợp đồng cho P4]` Cơ chế "khai báo điểm vào": đề bài nêu giao diện chấm gồm kiểu tham số và kiểu trả về (ví dụ `int ? (vector<int>&)`), không nêu tên. Khi nộp, sinh viên chọn/nhập tên hàm (hoặc lớp + phương thức) của mình ứng với giao diện đó. Hệ thống sinh adapter gọi đúng tên đã khai báo và biên dịch cùng code sinh viên; sai tên hoặc chữ ký → CE kèm thông báo rõ.
+- Người dùng đã chấp nhận: tên tự do nhưng kiểu tham số/trả về do đề quy định.
 - Chưa triển khai grading cho Free mode ở P4 cho đến khi hợp đồng tương tác giữa hidden tests và code sinh viên được ghi rõ trong `docs/REQUIREMENTS.md` và `docs/ARCHITECTURE.md`, có ví dụ end-to-end được người dùng duyệt.
 
 ### 4.3. Test và kết quả chấm
@@ -163,11 +165,11 @@ Thiết kế bắt buộc để database pause được (Microsoft: kết nối 
 - Render phải hỗ trợ cách chạy Docker worker và các giới hạn tài nguyên cần thiết. Khả năng áp dụng sandbox mạnh trong container không privileged phải kiểm chứng tại P2.
 - Code sinh viên là code không tin cậy. Các biện pháp user không quyền, giới hạn CPU/RAM/thời gian, giới hạn output, filesystem tạm và chặn mạng chỉ là các lớp giảm thiểu; phải thử tấn công và ghi rõ rủi ro còn lại.
 - Nếu P2 không chứng minh được mức cách ly chấp nhận được hoặc Render không đáp ứng, dừng trước khi xây lõi chấm; báo cáo kết quả và đề xuất lựa chọn thay thế để người dùng quyết định. Không tự chuyển sang dịch vụ Judge0/hosting khác khi chưa được duyệt.
-- Azure SQL Database Free Tier có hạn mức tháng và không có SLA; cần theo dõi mức dùng, chính sách khi chạm hạn mức và rủi ro database bị tự pause.
+- PostgreSQL B1MS chỉ free 12 tháng và tài nguyên thấp; cần theo dõi chi phí, dung lượng và hiệu năng ở P8.
 - Render free/staging có thể có giới hạn tài nguyên hoặc cold start; gói triển khai thực tế cần được chọn và xác minh trước khi đo tải/deploy.
-- Kết nối từ Render tới Azure SQL cần cấu hình firewall và bảo vệ connection secret; không đặt credential trong frontend hoặc repository.
+- Kết nối từ Render tới Azure PostgreSQL cần cấu hình firewall và bảo vệ connection secret; không đặt credential trong frontend hoặc repository.
 
-- Hết hạn mức Azure free → database pause tới đầu tháng sau (đã chọn AutoPause). Giảm thiểu: thiết kế ở 3.2, cảnh báo khi còn 10%, đo ở P8.
+- Bật nhầm tùy chọn (HA, replica, SKU khác B1MS, storage > 32 GB) hoặc tạo thêm server → phát sinh phí. Giảm thiểu: `docs/AZURE_SETUP.md` liệt kê từng lựa chọn, budget alert 1 USD.
 - Render free: ngủ sau 15 phút, thức lại khoảng 1 phút, CPU chưa rõ → TL có thể đo không ổn định; P2 đo.
 - Vercel Hobby dành cho mục đích phi thương mại. `[CẦN XÁC MINH điều khoản với mục đích giảng dạy]`
 - Gian lận qua code nộp (đọc đáp án, in kết quả giả, phá template) — biện pháp ở 4.1 và 4.3, kiểm thử ở P2/P4.
@@ -190,7 +192,7 @@ Thiết kế bắt buộc để database pause được (Microsoft: kết nối 
 | P2 | Spike: biên dịch và chạy cách ly trên Render | Dockerfile spike, báo cáo số đo và rủi ro | P0 (song song P1) | CHƯA BẮT ĐẦU |
 | P3 | Khung dự án, môi trường local, CI | skeleton, docker-compose, DEV_SETUP | P1, P2 | CHƯA BẮT ĐẦU |
 | P4 | Lõi chấm bài + hàng đợi + hai mode | worker chấm template/free-mode, bộ test chuẩn | P2, P3 | CHƯA BẮT ĐẦU |
-| P5 | Backend API và Azure SQL Database | API, migration, test phân quyền | P3, P4 | CHƯA BẮT ĐẦU |
+| P5 | Backend API và Azure PostgreSQL | API, migration, test phân quyền | P3, P4 | CHƯA BẮT ĐẦU |
 | P6 | Giao diện giảng viên | quản lý lớp, bài, template, test ẩn, điểm | P5 | CHƯA BẮT ĐẦU |
 | P7 | Giao diện sinh viên | xem đề, nhập/nộp code hai mode, xem kết quả | P5 | CHƯA BẮT ĐẦU |
 | P8 | Gia cố: bảo mật, hiệu năng, vận hành | báo cáo bảo mật + tải + database quota | P4–P7 | CHƯA BẮT ĐẦU |
@@ -204,7 +206,7 @@ P6 và P7 có thể chạy song song.
 ### P0 — Setup quy trình
 
 - Mục tiêu/phạm vi: hoàn tất cấu hình điều phối; không code sản phẩm.
-- Bàn giao: git local (đã init, `.gitignore`, `.gitattributes`); repo GitHub private + commit đầu + push (người dùng làm); AGENTS.md điền mục tiêu và thư mục không đụng; `handoff/reports/T-0000.md`; ghi kết quả setup vào `PROGRESS.md`.
+- Bàn giao: git local (`.gitignore`, `.gitattributes`) và repo GitHub `Hatsu-Phat/CppDSA` với commit đầu đã push — **xong 2026-10-31**; AGENTS.md điền mục tiêu và thư mục không đụng; `handoff/reports/T-0000.md`; ghi kết quả setup vào `PROGRESS.md`.
 - Nghiệm thu: (1) `run-task.ps1 -Task T-0000` in `exit=0` và `report_exists=true`; (2) báo cáo xác nhận model `gemini-3.8-flash-high` và việc nạp AGENTS.md/GEMINI.md; (3) AGENTS.md không còn `<điền>`; (4) `git remote -v` trỏ tới GitHub, `git status` sạch sau commit đầu; (5) `git check-ignore .env data/` liệt kê cả hai; (6) máy người dùng có Docker Desktop chạy được (`docker version`).
 - Kiểm thử: chạy T-0000, đối chiếu báo cáo với `docs/ORCHESTRATION.md`.
 - Phụ thuộc: không.
@@ -214,12 +216,12 @@ P6 và P7 có thể chạy song song.
 - Mục tiêu/phạm vi: chuyển mọi mục `[CHƯA CHỐT]` của MVP thành quyết định có văn bản; chưa viết code.
 - Bàn giao:
   - `docs/REQUIREMENTS.md`: vai trò, user story MVP, hai mode bài tập, quy tắc test/chấm, deadline/submission.
-  - `docs/ARCHITECTURE.md`: Vercel, Render API/worker, Azure SQL, luồng nộp → queue → compile/run → kết quả.
+  - `docs/ARCHITECTURE.md`: Vercel, Render API/grader, Azure PostgreSQL, luồng nộp → queue → compile/run → kết quả.
   - `docs/DECISIONS.md`: lựa chọn, lý do, phương án loại và các rủi ro chưa xử lý.
   - Mô hình dữ liệu nháp và hợp đồng chấm cho từng mode.
 - Nghiệm thu: 0 mục `[CHƯA CHỐT]` thuộc MVP; mọi user story có tiêu chí chấp nhận kiểm thử được; lựa chọn DB/chi phí/networking được ghi nhận; hợp đồng test cho template và free mode được duyệt; các ngưỡng kiểm thử tải được chốt; người dùng duyệt.
 - Kiểm thử: rà chéo — mỗi yêu cầu MVP ánh xạ tới ít nhất một tiêu chí nghiệm thu tại P2–P10.
-- Các điểm còn phải xác minh trong P1 (phần lớn đã có đề xuất ở mục 2–4): người dùng duyệt ví dụ E2E free mode; người dùng kiểm tra subscription có free offer cho Azure SQL (không phải Students Starter); mức vCore cho phép; Render region và outbound IP; điều khoản Vercel Hobby; hạn mức GitHub Actions cho repo private.
+- Các điểm còn phải xác minh trong P1: ví dụ E2E free mode làm hợp đồng cho P4; ngày bắt đầu 12 tháng free của Azure; Render region và outbound IP; giới hạn kết nối B1MS; điều khoản Vercel Hobby; hạn mức GitHub Actions cho repo private.
 - Phụ thuộc: P0; câu trả lời và phê duyệt của người dùng.
 
 ### P2 — Spike: biên dịch và chạy cách ly
@@ -233,15 +235,15 @@ P6 và P7 có thể chạy song song.
   4. Fork bomb, ghi file ngoài thư mục tạm, truy cập mạng và output khổng lồ bị chặn; nếu còn rủi ro phải mô tả chính xác và đánh giá mức độ.
   5. Chạy trong container không privileged; thử trên Render thật nếu người dùng cho phép.
   6. Xác nhận Docker/Render có thể áp dụng các giới hạn tài nguyên cần thiết ở mức chấp nhận được.
-  7. Trên Render free web service: đo thời gian chạy cùng một chương trình 10 lần (đề xuất độ lệch ≤ 20%) và thời gian cold start; kết quả quyết định grader có cần gói trả phí.
+  7. Trên Render free web service: đo thời gian chạy cùng một chương trình 10 lần (đề xuất độ lệch ≤ 20%) và thời gian cold start; kết quả quyết định số job song song và cách tính TL trên gói free.
   8. Chương trình sinh viên không đọc được expected output và không giả được kết quả chấm, thử ở cả hai mode.
 - Kiểm thử: script chạy bộ mẫu, xuất verdict mong đợi/thực tế, thời gian, bộ nhớ và kết quả từng kịch bản tấn công.
 - Phụ thuộc: P0 và roadmap được duyệt (cơ chế đã đề xuất ở 3.3–3.4); chạy song song P1. Spike không đạt yêu cầu bảo mật/chạy trên Render → dừng, quay lại P1 để người dùng chọn phương án khác.
 
 ### P3 — Khung dự án, môi trường local, CI
 
-- Mục tiêu/phạm vi: dựng skeleton theo stack TypeScript/Next.js/Node.js và Azure SQL đã chốt; chưa có nghiệp vụ.
-- Bàn giao: monorepo `src/web`, `src/api`, `src/grader`, `src/shared` (npm workspaces); docker-compose local gồm API, grader và container SQL Server thay cho Azure SQL (cùng T-SQL; khác biệt ghi trong DEV_SETUP); migration khởi tạo; lint/format; test runner; CI GitHub Actions (lint + test); `docs/DEV_SETUP.md`.
+- Mục tiêu/phạm vi: dựng skeleton theo stack TypeScript/Next.js/Node.js và PostgreSQL đã chốt; chưa có nghiệp vụ.
+- Bàn giao: monorepo `src/web`, `src/api`, `src/grader`, `src/shared` (npm workspaces); docker-compose local gồm API, grader và container PostgreSQL cùng major version với Azure; migration khởi tạo; lint/format; test runner; CI GitHub Actions (lint + test); `docs/DEV_SETUP.md`.
 - Nghiệm thu: một lệnh khởi động toàn bộ local; endpoint health trả 200; build + lint + test (ít nhất một test mẫu mỗi phần) pass từ bản clone sạch.
 - Kiểm thử: làm lại từ đầu theo DEV_SETUP.md; Claude chạy lại build/lint/test.
 - Phụ thuộc: P1, P2.
@@ -264,15 +266,15 @@ P6 và P7 có thể chạy song song.
 
 ### P5 — Backend API và dữ liệu
 
-- Mục tiêu/phạm vi: xác thực, phân quyền, quản lý lớp/bài/template/test/submission theo REQUIREMENTS; kết nối Azure SQL Database; tích hợp P4.
-- Bàn giao: API có đặc tả (OpenAPI hoặc tương đương), migration, test tích hợp và `docs/AZURE_SETUP.md` (tạo database free tier, AutoPause, firewall, cảnh báo hạn mức, budget alert, user quyền tối thiểu).
+- Mục tiêu/phạm vi: xác thực, phân quyền, quản lý lớp/bài/template/test/submission theo REQUIREMENTS; kết nối Azure PostgreSQL; tích hợp P4.
+- Bàn giao: API có đặc tả (OpenAPI hoặc tương đương), migration, test tích hợp và `docs/AZURE_SETUP.md` (tạo PostgreSQL B1MS đúng mức free theo mục 3.2, firewall, TLS, budget alert, role quyền tối thiểu).
 - Nghiệm thu:
   1. Mọi endpoint MVP có integration test và pass.
   2. Phân quyền: sinh viên không xem được test ẩn, bài/điểm/submission của người khác, không gọi được API giảng viên; mỗi luật có ít nhất một test âm tính.
   3. Backend kiểm tra giới hạn kích thước code, template và test case.
   4. Deadline và cơ chế lấy điểm cao nhất được áp dụng đúng, có test biên.
   5. Connection string/credential chỉ nằm ở môi trường backend/worker; không xuất hiện trong frontend bundle hoặc repository.
-- Kiểm thử: integration test với container SQL Server ở local; test pool kết nối đóng hết sau thời gian rảnh (không còn kết nối mở để database pause được); kiểm tra kết nối staging Azure SQL và firewall trước khi deploy.
+- Kiểm thử: integration test với container PostgreSQL ở local; kiểm tra kết nối staging Azure PostgreSQL và firewall trước khi deploy.
 - Phụ thuộc: P3, P4.
 
 ### P6 — Giao diện giảng viên
@@ -295,29 +297,29 @@ P6 và P7 có thể chạy song song.
 ### P8 — Gia cố: bảo mật, hiệu năng, vận hành
 
 - Mục tiêu/phạm vi: chống lạm dụng, đo tải, log, healthcheck, theo dõi hạn mức database và sao lưu theo khả năng gói đã chọn.
-- Bàn giao: `reports/P8_security.md`, `reports/P8_load.md`; rate limit submit; log có cấu trúc; hướng dẫn theo dõi Azure SQL Free Tier usage.
+- Bàn giao: `reports/P8_security.md`, `reports/P8_load.md`; rate limit submit; log có cấu trúc; hướng dẫn theo dõi chi phí và dung lượng Azure PostgreSQL.
 - Nghiệm thu:
   1. Bộ ≥ 10 chương trình/kịch bản tấn công (fork bomb, đọc file hệ thống, gọi mạng, output khổng lồ, sleep dài, biên dịch cực lâu...) không làm sập worker hoặc làm lộ dữ liệu; mọi giới hạn và rủi ro còn lại được ghi rõ.
   2. Kiểm thử tải với tối đa 20 người dùng đồng thời và kịch bản lớp khoảng 50 sinh viên trong một buổi; đo p50/p95 thời gian từ submit tới kết quả, throughput, queue time, CPU/RAM và tỷ lệ lỗi.
   3. Ngưỡng p95 được chốt ở P1; không mất submission trong bài test tải.
   4. Không còn lỗ hổng phụ thuộc mức high/critical theo công cụ audit của stack.
-  5. Database quota/auto-pause được theo dõi; hành vi khi gần/hết hạn mức được kiểm thử và mô tả.
-  6. Đo vCore-giây tiêu thụ trong một buổi mô phỏng (metric Azure); database tự pause trong ≤ 20 phút sau khi hết người dùng; ngoại suy mức dùng tháng.
-  7. Chọn gói Render cho grader (free hay trả phí) dựa trên số đo; người dùng duyệt.
+  5. Cost Management cho thấy chi phí database tháng = 0 USD; dung lượng data/backup < 80% của 32 GB; budget alert hoạt động.
+  6. Đo CPU/RAM/số kết nối của PostgreSQL B1MS trong kịch bản tải; không có lỗi hết kết nối.
+  7. Chốt cấu hình grader trên gói free (số job song song, cách tính TL) theo số đo; không dùng gói trả phí.
 - Kiểm thử: chạy bộ tấn công; load test trên local với giới hạn CPU/RAM giống gói Render dự kiến; kiểm thử quota/auto-pause trên môi trường phù hợp nếu có thể.
 - Phụ thuộc: P4–P7.
 
 ### P9 — Deploy Vercel + Render + Azure
 
-- Mục tiêu/phạm vi: frontend lên Vercel; API và worker Docker lên Render; database Azure SQL Database; cấu hình kết nối an toàn.
-- Bàn giao: cấu hình Render/Vercel từ cùng một repo GitHub (Vercel Root Directory = `src/web`; 2 service Render dùng Dockerfile của `src/api` và `src/grader`), biến môi trường/secret, CORS, firewall Azure SQL, migration khi deploy, `docs/DEPLOY.md` có quy trình rollback.
+- Mục tiêu/phạm vi: frontend lên Vercel; API và worker Docker lên Render; database Azure PostgreSQL; cấu hình kết nối an toàn.
+- Bàn giao: cấu hình Render/Vercel từ cùng một repo GitHub (Vercel Root Directory = `src/web`; 2 service Render dùng Dockerfile của `src/api` và `src/grader`), biến môi trường/secret, CORS, firewall Azure PostgreSQL, migration khi deploy, `docs/DEPLOY.md` có quy trình rollback.
 - Nghiệm thu:
   1. Smoke test trên URL thật: đăng nhập, tạo bài ở hai mode, nộp và nhận kết quả đúng cho AC/WA/TLE/CE.
   2. Hidden test không thể truy cập từ frontend hoặc tài khoản sinh viên.
   3. Bộ tấn công P8 chạy lại trên Render; mọi khác biệt so với local được ghi nhận và người dùng duyệt.
   4. Không có secret trong repo và bundle frontend.
   5. Rollback về bản trước thực hiện được theo DEPLOY.md.
-- Kiểm thử: E2E smoke trên staging; đo cold start nếu gói Render có chế độ ngủ; kiểm tra kết nối Vercel → Render và Render → Azure SQL.
+- Kiểm thử: E2E smoke trên staging; đo cold start nếu gói Render có chế độ ngủ; kiểm tra kết nối Vercel → Render và Render → Azure PostgreSQL.
 - Phụ thuộc: P8; tài khoản Vercel/Render/Azure do người dùng cung cấp.
 
 ### P10 — Pilot và bàn giao
@@ -330,13 +332,16 @@ P6 và P7 có thể chạy song song.
 
 ## 10. Các điểm cần người dùng xác nhận/thực hiện
 
-1. **Free mode (duyệt ở P1, chặn P4):** chấp nhận cơ chế "khai báo điểm vào" ở 4.2 — tên tự do, kiểu tham số/trả về do đề quy định?
-2. **Azure (kiểm tra trong portal):** khi tạo Azure SQL Database có hiện free offer không; subscription có phải Azure for Students Starter không. Không có free tier → báo lại trước P5 để chọn phương án khác.
-3. **Rủi ro AutoPause:** hết 100.000 vCore-giây trong tháng thì database ngừng tới đầu tháng sau (không mất tiền). Đồng ý?
-4. **GitHub:** tạo repo private trống (không README/.gitignore/license), rồi chạy commit đầu và push (lệnh trong phản hồi của Claude).
-5. **Chi phí Render:** nếu P2/P8 cho thấy grader free không đủ, có chấp nhận trả gói nhỏ nhất cho riêng grader? (quyết định khi có số đo)
+Đã trả lời (2026-10-31): free mode, rủi ro ngừng do hạn mức free, repo GitHub, không trả phí Render, hosting Vercel + Render. Không còn quyết định nào chặn việc duyệt roadmap. Việc còn lại theo phase:
+1. **P1:** xem ngày bắt đầu 12 tháng free trong Azure Cost Management để ghi hạn chuyển database.
+2. **P2:** nếu Render free không chạy được grader ở mức chấp nhận được → quyết định chấp nhận giới hạn hay đổi nền tảng cho grader.
+3. **P5:** tạo PostgreSQL theo `docs/AZURE_SETUP.md`; dừng nếu màn hình ước tính chi phí không phải 0 USD.
+4. **P9:** cung cấp quyền/tài khoản Vercel và Render, kết nối với repo GitHub.
 
 ## 11. Tài liệu tham khảo Azure đã kiểm tra
+
+- Ảnh portal Azure của người dùng (2026-10-31), mục "Services that include monthly free amounts for 12 months": PostgreSQL và MySQL Flexible Server B1MS 750 giờ + 32 GB storage + 32 GB backup; Linux VM B2pts v2/B2ats v2 750 giờ; vượt mức tính pay-as-you-go.
+- Các mục Azure SQL Database dưới đây là thông tin cho **phương án dự phòng**.
 
 - Azure for Students: 100 USD credit có thời hạn một năm và có một số dịch vụ được chọn miễn phí: https://learn.microsoft.com/en-us/azure/education-hub/about-azure-for-students
 - Azure SQL Database Free Tier: hạn mức 100.000 vCore-seconds, 32 GB dữ liệu và 32 GB backup mỗi tháng; giới hạn/điều kiện và cách xử lý khi đạt hạn mức: https://learn.microsoft.com/en-us/azure/azure-sql/database/free-tier?view=azuresql
@@ -348,4 +353,4 @@ P6 và P7 có thể chạy song song.
 
 ---
 
-**Trạng thái phê duyệt:** Chưa duyệt. Chỉ bắt đầu phase theo quy trình sau khi người dùng kiểm tra và gửi `Duyệt roadmap.`
+**Trạng thái phê duyệt:** Người dùng đã duyệt roadmap v6 ngày 2026-10-31.
