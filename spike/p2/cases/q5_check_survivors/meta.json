@@ -1,0 +1,8 @@
+{
+  "id": "q5_check_survivors",
+  "name": "Probe q5 - Check Surviving Sandbox Processes",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

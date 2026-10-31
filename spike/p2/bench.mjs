@@ -21,6 +21,8 @@ if (compileRes.status !== 0) {
     process.exit(1);
 }
 
+fs.chmodSync(BIN_PATH, 0o755);
+
 // Chuẩn bị thư mục chạy
 if (fs.existsSync(WORK_DIR)) {
     fs.rmSync(WORK_DIR, { recursive: true, force: true });

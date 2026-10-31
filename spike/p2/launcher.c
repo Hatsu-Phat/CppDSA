@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <seccomp.h>
 #include <grp.h>
 #include <errno.h>
@@ -14,11 +16,41 @@
 #include <fcntl.h>
 
 static volatile pid_t g_child_pid = 0;
+static uid_t g_target_uid = 0;
+
+static void kill_all_by_uid(uid_t uid) {
+    if (uid == 0) return; // Do not kill root
+    for (int iter = 0; iter < 5; ++iter) {
+        int found = 0;
+        DIR *dir = opendir("/proc");
+        if (!dir) break;
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            char *endptr;
+            long pid = strtol(entry->d_name, &endptr, 10);
+            if (*endptr == '\0' && pid > 1 && pid != getpid()) {
+                char stat_path[64];
+                snprintf(stat_path, sizeof(stat_path), "/proc/%ld", pid);
+                struct stat st;
+                if (stat(stat_path, &st) == 0 && st.st_uid == uid) {
+                    kill((pid_t)pid, SIGKILL);
+                    found++;
+                }
+            }
+        }
+        closedir(dir);
+        if (!found) break;
+        usleep(5000); // 5ms
+    }
+}
 
 static void reap_all_children(void) {
     if (g_child_pid > 0) {
         kill(-g_child_pid, SIGKILL);
         kill(g_child_pid, SIGKILL);
+    }
+    if (g_target_uid > 0) {
+        kill_all_by_uid(g_target_uid);
     }
     while (waitpid(-1, NULL, WNOHANG | __WALL) > 0) {}
     usleep(10000); // 10ms
@@ -52,7 +84,7 @@ int main(int argc, char *argv[]) {
     long long ml_bytes = 0;
     long long fsize_bytes = 0;
     int nproc = 0;
-    int nofile = 32;
+    int nofile = 128;
     int use_seccomp = 0;
     int cmd_index = -1;
 
@@ -92,6 +124,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    g_target_uid = target_uid;
+
     // Change directory if requested
     if (workdir) {
         if (chdir(workdir) != 0) {
@@ -106,6 +140,8 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, sig_handler);
     signal(SIGINT, sig_handler);
     signal(SIGALRM, sig_handler);
+    signal(SIGHUP, sig_handler);
+    signal(SIGQUIT, sig_handler);
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -162,16 +198,16 @@ int main(int argc, char *argv[]) {
         rl.rlim_max = 0;
         setrlimit(RLIMIT_CORE, &rl);
 
-        // Drop privileges
+        // Drop privileges completely
         if (target_gid > 0) {
-            if (setgid(target_gid) != 0 || setgroups(0, NULL) != 0) {
-                perror("setgid/setgroups failed");
+            if (setgroups(0, NULL) != 0 || setresgid(target_gid, target_gid, target_gid) != 0) {
+                perror("setgroups/setresgid failed");
                 exit(1);
             }
         }
         if (target_uid > 0) {
-            if (setuid(target_uid) != 0) {
-                perror("setuid failed");
+            if (setresuid(target_uid, target_uid, target_uid) != 0) {
+                perror("setresuid failed");
                 exit(1);
             }
         }
@@ -222,9 +258,15 @@ int main(int argc, char *argv[]) {
         }
 
         // Clean environment
+        char tmpdir_env[512];
+        char home_env[512];
+        snprintf(tmpdir_env, sizeof(tmpdir_env), "TMPDIR=%s", workdir ? workdir : "/tmp");
+        snprintf(home_env, sizeof(home_env), "HOME=%s", workdir ? workdir : "/tmp");
+
         char *clean_env[] = {
-            "PATH=/usr/bin:/bin",
-            "HOME=/tmp",
+            "PATH=/usr/local/bin:/usr/bin:/bin",
+            home_env,
+            tmpdir_env,
             "LANG=C.UTF-8",
             NULL
         };
@@ -263,7 +305,7 @@ int main(int argc, char *argv[]) {
         fclose(mf);
     }
 
-    // Clean up any remaining processes in the child's process group and all reparented descendants
+    // Clean up any remaining processes in child's process tree and any surviving processes with target UID
     reap_all_children();
 
     if (WIFEXITED(status)) {

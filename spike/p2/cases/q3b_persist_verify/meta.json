@@ -1,0 +1,8 @@
+{
+  "id": "q3b_persist_verify",
+  "name": "Probe q3b - Verify No Persisted Files Exist",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

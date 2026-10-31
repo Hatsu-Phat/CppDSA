@@ -1,0 +1,8 @@
+{
+  "id": "q6_stderr_flood",
+  "name": "Probe q6 - Stderr Flood 800MB",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

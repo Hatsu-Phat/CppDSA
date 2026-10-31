@@ -1,0 +1,8 @@
+{
+  "id": "q1_read_case_expected",
+  "name": "Probe q1 - Read Case Expected and Runner Code",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}
