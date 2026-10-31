@@ -188,8 +188,8 @@ Thiết kế ứng dụng:
 | Phase | Mục tiêu | Sản phẩm bàn giao chính | Phụ thuộc | Trạng thái |
 |---|---|---|---|---|
 | P0 | Setup quy trình và repo | git + GitHub repo, AGENTS.md hoàn chỉnh, báo cáo T-0000 | - | XONG (PASS 2026-11-01) |
-| P1 | Chốt yêu cầu và kiến trúc (không code) | REQUIREMENTS, ARCHITECTURE, DECISIONS | P0 | PASS kỹ thuật 2026-11-01, chờ người dùng duyệt |
-| P2 | Spike: biên dịch và chạy cách ly trên Render | Dockerfile spike, báo cáo số đo và rủi ro | P0 (song song P1) | CHƯA BẮT ĐẦU |
+| P1 | Chốt yêu cầu và kiến trúc (không code) | REQUIREMENTS, ARCHITECTURE, DECISIONS | P0 | XONG (người dùng duyệt 2026-11-01) |
+| P2 | Spike: biên dịch và chạy cách ly trên Render | Dockerfile spike, báo cáo số đo và rủi ro | P0 (song song P1) | ĐANG LÀM |
 | P3 | Khung dự án, môi trường local, CI | skeleton, docker-compose, DEV_SETUP | P1, P2 | CHƯA BẮT ĐẦU |
 | P4 | Lõi chấm bài + hàng đợi + hai mode | worker chấm template/free-mode, bộ test chuẩn | P2, P3 | CHƯA BẮT ĐẦU |
 | P5 | Backend API và Azure PostgreSQL | API, migration, test phân quyền | P3, P4 | CHƯA BẮT ĐẦU |

@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P1
+CURRENT_PHASE: P2
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -20,3 +20,4 @@ CURRENT_PHASE: P1
 - 2026-11-01: T-0000 chạy lại sau khi thêm quyền read_file → exit=0, SUCCESS; P0 PASS (6/6 tiêu chí). P1 đã PASS kỹ thuật, chờ người dùng duyệt.
 - 2026-11-01: accept-phase P1 → FAIL do test: check-docs để lọt 6/6 mutation, độ phủ MVP chưa tự động hóa; run-examples ổn (lọt 1: test hardcode). Tài liệu đúng nội dung. Giao T-0002 trên branch `task/T-0002`.
 - 2026-11-01: T-0002 PASS (checker bắt 17/17 mutation độc lập). P1 PASS kỹ thuật, chờ người dùng duyệt (hợp đồng chấm hai mode) trước khi mở P2/P3. Merge `task/T-0002` → main.
+- 2026-11-01: người dùng duyệt P1 (gồm hợp đồng chấm hai mode). Bắt đầu P2. Chia 2 task: T-0003 spike sandbox local trong Docker không privileged (tiêu chí 1–4, 6, 8; 5 ở local); T-0004 (sau T-0003 PASS) thử trên Render free + bench (tiêu chí 5, 7) — cần người dùng cho phép deploy.
