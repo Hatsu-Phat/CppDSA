@@ -1,0 +1,16 @@
+{
+  "id": "20_attack_network",
+  "name": "Attack - Network Socket & DNS",
+  "mode": "standard",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertStdoutContains": [
+    "SOCKET_BLOCKED",
+    "DNS_BLOCKED"
+  ],
+  "assertStdoutNotContains": [
+    "SOCKET_ALLOWED",
+    "DNS_ALLOWED"
+  ]
+}

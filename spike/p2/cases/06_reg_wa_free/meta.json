@@ -1,0 +1,8 @@
+{
+  "id": "06_reg_wa_free",
+  "name": "Free Mode WA - Incorrect Indices",
+  "mode": "free",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

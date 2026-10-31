@@ -1,0 +1,12 @@
+{
+  "id": "23_attack_kill_parent",
+  "name": "Attack - Kill Parent or Init Process",
+  "mode": "standard",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertStdoutContains": [
+    "KILL_INIT:-1:1",
+    "KILL_PARENT:-1:1"
+  ]
+}

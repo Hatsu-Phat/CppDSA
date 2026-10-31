@@ -1,0 +1,8 @@
+{
+  "id": "final_ac_recovery",
+  "name": "Recovery Check - Worker Healthy",
+  "mode": "standard",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

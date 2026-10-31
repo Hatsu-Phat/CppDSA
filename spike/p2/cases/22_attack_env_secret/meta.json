@@ -1,0 +1,14 @@
+{
+  "id": "22_attack_env_secret",
+  "name": "Attack - Read Env Fake Secret",
+  "mode": "standard",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertStdoutNotContains": [
+    "super_fake_secret_xyz123"
+  ],
+  "assertStdoutContains": [
+    "SECRET_NOT_FOUND"
+  ]
+}

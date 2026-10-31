@@ -97,3 +97,19 @@
 - Đánh giá test: checker và runner bắt được 17/17 mutation độc lập, không báo lỗi bản đúng.
 - Kết luận: PASS kỹ thuật → chờ người dùng duyệt để mở P2/P3.
 
+### T-0003 vòng 1 — P2 spike sandbox local — 2026-11-01
+- Môi trường: Docker Desktop 29.8.1; image `cppdsa-spike` (node:22-bookworm + g++ + libseccomp); branch `task/T-0003`.
+- Lệnh (Claude chạy lại): `docker build -t cppdsa-spike spike/p2` OK; `docker run --rm cppdsa-spike node run-suite.mjs` → exit=0, 27/27 PASS (AC/WA/CE/RE mỗi loại 3–4; TLE cpu 1064 ms, sleep 1063 ms; MLE; fork bomb→TLE; worker recovery PASS); `node bench.mjs` → 10 lần, mean 256.70 ms, SD 9.26 ms, (max−min)/mean 9.74%.
+- Probe độc lập (`handoff/tasks/T-0003-probes/`, chạy `--memory 1g`):
+  - q1 đọc `/app/cases/*/expected.txt` + `/app/run-suite.mjs`: LEAK (WA).
+  - q3 ghi `/home/sandbox`, `/var/tmp`, `/run/lock`, `/var/lock`: LEAK (WA).
+  - q4 cháu `setsid()` giữ pipe: runner TREO > 10 phút (phải `docker kill`).
+  - q4b+q5 tiến trình sandbox sống sót sau bài nộp: LEAK (WA).
+  - q6 800 MB ra stderr: runner chết `ERR_STRING_TOO_LONG`.
+  - q7 đọc `/proc/1/environ`, `/proc/<ppid>/environ`: SAFE (AC).
+  - q8 16 tiến trình × 200–300 MB: TLE thay vì MLE; worker sống.
+  - c1 `#include "/app/hidden_tests/secret.txt"`: g++ chạy bằng root → thông báo CE chứa `super_secret_hidden_flag_12345`.
+- Đánh giá test agy: ca tấn công chỉ kiểm file mồi được bảo vệ riêng, không kiểm expected thật, thoát process group, stderr, bước biên dịch → test không chứng minh tiêu chí 4, 8.
+- Tiêu chí P2 (local): 1 ✔ · 2 ✔ · 3 ✔ (q8 lệch verdict, nhẹ) · 4 ✘ (q3, q4, q6, c1) · 5 ✔ local, Render CHƯA · 6 ✘ (runner treo/chết) · 7 CHƯA (Render) · 8 ✘ (q1, c1).
+- Kết luận: FAIL → T-0003 vòng 2/3.
+

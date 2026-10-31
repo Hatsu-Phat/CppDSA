@@ -1,0 +1,8 @@
+{
+  "id": "12_reg_re_divzero",
+  "name": "Standard RE - Division by Zero",
+  "mode": "standard",
+  "expectedVerdict": "RE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

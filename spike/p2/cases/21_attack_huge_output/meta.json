@@ -1,0 +1,9 @@
+{
+  "id": "21_attack_huge_output",
+  "name": "Attack - Huge Output (OLE)",
+  "mode": "standard",
+  "expectedVerdict": "OLE",
+  "timeLimitMs": 2000,
+  "memoryLimitBytes": 268435456,
+  "maxOutputBytes": 262144
+}

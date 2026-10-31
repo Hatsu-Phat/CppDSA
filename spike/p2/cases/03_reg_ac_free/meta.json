@@ -1,0 +1,8 @@
+{
+  "id": "03_reg_ac_free",
+  "name": "Free Mode AC - Two Sum",
+  "mode": "free",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

@@ -1,0 +1,8 @@
+{
+  "id": "11_reg_re_abort",
+  "name": "Standard RE - Uncaught Exception",
+  "mode": "standard",
+  "expectedVerdict": "RE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

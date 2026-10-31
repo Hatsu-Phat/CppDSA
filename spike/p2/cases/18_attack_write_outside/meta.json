@@ -1,0 +1,13 @@
+{
+  "id": "18_attack_write_outside",
+  "name": "Attack - Write Outside Temp Dir",
+  "mode": "standard",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertFilesDoNotExist": [
+    "/tmp/x",
+    "/app/pwned.txt",
+    "/app/hidden_tests/pwned.txt"
+  ]
+}

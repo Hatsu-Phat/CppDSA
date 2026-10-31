@@ -1,0 +1,9 @@
+{
+  "id": "02_reg_ac_template",
+  "name": "Template AC - Reverse Linked List",
+  "mode": "template",
+  "regionName": "reverseLinkedList",
+  "expectedVerdict": "AC",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

@@ -1,0 +1,8 @@
+{
+  "id": "07_reg_ce_standard",
+  "name": "Standard CE - Syntax Error",
+  "mode": "standard",
+  "expectedVerdict": "CE",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456
+}

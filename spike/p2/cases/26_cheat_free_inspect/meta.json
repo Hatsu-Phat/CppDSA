@@ -1,0 +1,11 @@
+{
+  "id": "26_cheat_free_inspect",
+  "name": "Cheat Free Mode - Inspect Adapter and Filesystem",
+  "mode": "free",
+  "expectedVerdict": "WA",
+  "timeLimitMs": 1000,
+  "memoryLimitBytes": 268435456,
+  "assertStdoutNotContains": [
+    "super_secret_hidden_flag_12345"
+  ]
+}
