@@ -15,3 +15,4 @@ CURRENT_PHASE: P1
 - 2026-10-31: người dùng duyệt roadmap v6. Tiếp theo: P0 (AGENTS.md, T-0000).
 - 2026-10-31: P0 — AGENTS.md đã điền; git/GitHub xong; tạo task T-0000 (P0) và T-0001 (P1). Chờ người dùng chạy T-0000 (phiên Claude chạy trên cloud, không gọi được agy). PHASE giữ SETUP tới khi T-0000 PASS.
 - 2026-10-31: người dùng duyệt roadmap, chuyển PHASE sang DEV và bắt đầu P1 (T-0000/P0 chưa chạy, người dùng cho bỏ qua cổng). Host không có node/g++ → người dùng chọn chạy kiểm chứng trong Docker `node:22-bookworm` (Node 22.23.4, g++ 12.2.0). Giao T-0001 cho agy trên branch `task/T-0001`.
+- 2026-11-01: T-0001 (P1) PASS sau 3 vòng (v1: test free-mode đa nghiệm + thiếu `[CẦN XÁC MINH]`; v2: còn "90 ngày", "2 job"; v3: đạt). Bàn giao: docs/REQUIREMENTS, ARCHITECTURE, DECISIONS, DATA_MODEL, docs/examples, tests/p1. Merge `task/T-0001` → main. Chờ người dùng duyệt P1 (hợp đồng chấm hai mode) trước khi sang P2/P3. T-0000 (P0) vẫn chưa chạy.

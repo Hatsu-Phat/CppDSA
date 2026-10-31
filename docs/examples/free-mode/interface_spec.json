@@ -1,0 +1,19 @@
+{
+  "problem": "Two Sum (Tìm hai chỉ số có tổng bằng target)",
+  "function_interface": {
+    "return_type": "std::vector<int>",
+    "parameters": [
+      {
+        "name": "nums",
+        "type": "const std::vector<int>&",
+        "description": "Mảng số nguyên đầu vào"
+      },
+      {
+        "name": "target",
+        "type": "int",
+        "description": "Giá trị tổng cần tìm"
+      }
+    ],
+    "description": "Trả về vector gồm 2 chỉ số 0-based phân biệt [i, j] sao cho nums[i] + nums[j] == target và i < j. Nếu không tìm thấy, trả về vector rỗng {}. Dữ liệu test ẩn đảm bảo có duy nhất một cặp chỉ số thỏa mãn (đáp án đơn nghiệm)."
+  }
+}

@@ -1,0 +1,2 @@
+# Minimal Arch
+Architecture details.
