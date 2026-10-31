@@ -18,3 +18,4 @@ CURRENT_PHASE: P1
 - 2026-11-01: T-0001 (P1) PASS sau 3 vòng (v1: test free-mode đa nghiệm + thiếu `[CẦN XÁC MINH]`; v2: còn "90 ngày", "2 job"; v3: đạt). Bàn giao: docs/REQUIREMENTS, ARCHITECTURE, DECISIONS, DATA_MODEL, docs/examples, tests/p1. Merge `task/T-0001` → main. Chờ người dùng duyệt P1 (hợp đồng chấm hai mode) trước khi sang P2/P3. T-0000 (P0) vẫn chưa chạy.
 - 2026-11-01: kiểm tra T-0000: không thấy kết quả từ Claude desktop. Chạy lại 2 lần, đều bị hủy vì quyền headless (read_file ngoài workspace). Tiêu chí P0 3–6 đạt, 1–2 chưa. Xem TEST_REPORT.
 - 2026-11-01: T-0000 chạy lại sau khi thêm quyền read_file → exit=0, SUCCESS; P0 PASS (6/6 tiêu chí). P1 đã PASS kỹ thuật, chờ người dùng duyệt.
+- 2026-11-01: accept-phase P1 → FAIL do test: check-docs để lọt 6/6 mutation, độ phủ MVP chưa tự động hóa; run-examples ổn (lọt 1: test hardcode). Tài liệu đúng nội dung. Giao T-0002 trên branch `task/T-0002`.

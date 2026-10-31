@@ -65,3 +65,20 @@
 - Tiêu chí P0: 1 ✔ · 2 ✔ · 3 ✔ · 4 ✔ · 5 ✔ · 6 ✔.
 - Kết luận: P0 PASS.
 
+### Phase P1 — nghiệm thu (accept-phase) — 2026-11-01
+- Môi trường: Docker `node:22-bookworm` (Node v22.23.4, g++ 12.2.0), commit `44ad5dd` (main).
+- Phạm vi: `git diff 99b1dec..HEAD` chỉ chạm docs P1, `docs/examples/`, `tests/p1/`, handoff, file quản lý; không có file ngoài phạm vi, `src/` trống.
+- Lệnh kiểm chứng (Claude chạy lại): check-docs exit=0; `--self-test` exit=0 (5/5); run-examples exit=0 (8/8).
+- Tiêu chí PROJECT_PLAN §9 P1:
+  1. 0 mục `[CHƯA CHỐT]` thuộc MVP ✔ (grep `CHƯA CHỐT` trong 4 docs: 0 dòng).
+  2. Mọi user story có AC kiểm thử được ✔ (17 US; kiểm tay US-15/16/17 khớp PROJECT_PLAN 4.3: verdict từng test, không lộ dữ liệu, điểm cao nhất trước deadline, nộp trễ không tính điểm).
+  3. DB/chi phí/networking ghi nhận ✔ (D-01, D-02, D-04; 7 điểm `[CẦN XÁC MINH]`).
+  4. Hợp đồng test hai mode ✔ về kỹ thuật (ví dụ chạy được, có CE/WA/lời giải thay thế); chờ người dùng duyệt.
+  5. Ngưỡng tải ✔ (REQUIREMENTS §6, D-15: 20 người đồng thời, lớp 50, p95 ≤ 10 s khi grader đã thức — đúng PROJECT_PLAN).
+  6. Kế hoạch kiểm thử "rà chéo mọi yêu cầu MVP → tiêu chí P2–P10": ✘ chưa được tự động hóa; checker chỉ kiểm US đã khai báo, không kiểm độ phủ so với PROJECT_PLAN.
+  7. Người dùng duyệt: CHƯA.
+- Đánh giá test do agy viết (mutation trên bản sao trong scratchpad, script `mutate_docs.py`, `mutate_examples.py`):
+  - `check-docs.mjs`: 0/6 mutation bị bắt (đều exit 0): m1 `[CHƯA CHỐT: TL]`; m2 xóa trọn US-17; m3 xóa D-09; m4 AC-US-01 đặt sai mục; m5 `Nguồn: TODO`; m6 cột phase = P1, "P2" chỉ trong văn bản. Bản đối chứng exit 0. → Checker chỉ kiểm định dạng, không kiểm được yêu cầu.
+  - `run-examples.mjs`: 5/5 mutation sai bị bắt (exit 1): template sai, free hợp lệ thay bằng WA, CE biên dịch được, expected đổi, WA thành đúng. Lọt 1: thêm test3 (expected sai) vẫn exit 0 vì danh sách test hardcode. Bản đối chứng exit 0.
+- Kết luận: FAIL (test chưa đủ để chứng minh tiêu chí; tài liệu không phát hiện lỗi nội dung) → T-0002 (làm chặt checker + độ phủ MVP + self-test mutation). Ghi chú: P1 đã dùng 3 vòng ở T-0001; người dùng yêu cầu rõ giao task sửa khi FAIL.
+
