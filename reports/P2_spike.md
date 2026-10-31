@@ -16,33 +16,47 @@ Mục tiêu: Dựng và kiểm chứng spike grader (Node.js + g++ C++17) chạy
   - Không thể chạy Docker-in-Docker hoặc các giải pháp sandbox dựa trên nested container.
   - Các tính năng nhân nâng cao như user namespace lồng nhau hoặc cgroup v2 controller có thể bị hạn chế hoặc không khả dụng.
 
-### 1.2. Giải pháp kiến trúc đã triển khai
-Hệ thống kết hợp mô hình bảo vệ đa tầng (Defense in Depth) trong container tiêu chuẩn:
+### 1.2. Giải pháp kiến trúc đã triển khai (Cập nhật sau kiểm chứng Probe bảo mật)
+Hệ thống kết hợp mô hình bảo vệ đa tầng (Defense in Depth) trong container tiêu chuẩn không đặc quyền:
 
 ```
 [ Container (Docker unprivileged) ]
   ├── PID 1: dumb-init (thu hồi zombie, chuyển tiếp tín hiệu an toàn)
-  └── Node.js Runner (Root trong container, quản lý chấm & so sánh output độc lập)
+  └── Node.js Runner (Root trong container, giám sát & điều phối chấm độc lập)
         │
-        ├── Chuẩn bị thư mục tạm riêng biệt (/tmp/run_<case_id>, phân quyền 0700, owner sandbox)
-        ├── Giữ nguyên test ẩn / expected / secrets trong bộ nhớ hoặc thư mục 0700 root (/app/hidden_tests)
+        ├── Khóa hệ thống tập tin cốt lõi (secureSystemDirs):
+        │     ├── /app (mode 0700 root:root) -> Sandbox UID 10001 không đọc được test, expected, runner code
+        │     ├── /dev/shm, /var/tmp, /run/lock, /home/sandbox (mode 0755 root:root) -> Khóa ghi dữ liệu bền vững
+        │     └── Dọn sạch file rác (cleanStrayFiles) trước và sau mỗi ca chấm
         │
-        └── Khởi tạo: C Launcher (/usr/local/bin/launcher)
-              ├── Thiết lập Subreaper (PR_SET_CHILD_SUBREAPER) để quản lý mọi tiến trình con
+        ├── Biên dịch mã nguồn qua Sandbox Launcher (compileSource):
+        │     ├── Chạy g++ -std=c++17 -O2 dưới Sandbox UID 10001
+        │     ├── Giới hạn CPU (5s), Memory (1GB), File size (50MB), NPROC (50)
+        │     ├── Chặn mạng bằng Seccomp
+        │     └── Hạn chế stderr tối đa 64 KB, ngăn chặn rò rỉ secret qua CE message (#include)
+        │
+        └── Thực thi bài nộp qua C Launcher (/usr/local/bin/launcher):
+              ├── Thiết lập Subreaper (PR_SET_CHILD_SUBREAPER)
               ├── Thiết lập Process Group độc lập (setpgid(0, 0))
-              ├── Gán giới hạn tài nguyên kernel POSIX (setrlimit: CPU, AS, DATA, FSIZE, NPROC, NOFILE, CORE=0)
-              ├── Xóa sạch môi trường (clean_env chỉ giữ PATH, HOME, loại bỏ hoàn toàn GRADER_SECRET)
+              ├── Gán giới hạn tài nguyên POSIX rlimit (CPU, AS, DATA, FSIZE, NPROC=20, NOFILE=128, CORE=0)
+              ├── Xóa sạch môi trường (clean_env chỉ giữ PATH, HOME, cô lập hoàn toàn GRADER_SECRET)
               ├── Chuyển quyền (Drop privileges): setgid(10001) -> setgroups(0, NULL) -> setuid(10001) (user sandbox)
               ├── Khóa nâng quyền: prctl(PR_SET_NO_NEW_PRIVS, 1)
-              ├── Chặn mạng bằng Seccomp Filter (libseccomp): trả về EPERM cho socket, connect, bind, listen, send, recv...
-              └── Thực thi mã sinh viên (execve)
+              ├── Chặn mạng bằng Seccomp Filter (libseccomp): trả về EPERM cho socket, connect, bind, listen...
+              ├── Thực thi mã sinh viên (execve)
+              │
+              └── Cơ chế dọn dẹp và chống treo đa tầng:
+                    ├── Quét /proc đa chu kỳ diệt toàn bộ tiến trình của UID 10001 (kill_all_by_uid & killAllSandboxProcesses)
+                    ├── Giới hạn thời gian cứng (hard timer) độc lập với trạng thái pipe/stdio (chống setsid/pipe leak)
+                    └── Hạn chót toàn cục (global timeout 180s) cho toàn bộ test suite
 ```
 
 ### 1.3. Lý do lựa chọn
-1. **Hoạt động 100% trong `docker run` mặc định:** Cơ chế chuyển user sang non-root (`sandbox` UID 10001), phân quyền filesystem DAC chuẩn Unix, POSIX `setrlimit` và `PR_SET_NO_NEW_PRIVS` kết hợp Seccomp filter là các tính năng chuẩn của nhân Linux, được Docker daemon cho phép mặc định mà không cần cấp quyền bổ sung.
-2. **Ngăn chặn triệt để rò rỉ đáp án:** Tiến trình sinh viên chạy ở thư mục tạm cô lập, không có quyền đọc `/app/hidden_tests` (mode 0700) hay môi trường của runner. Việc so sánh kết quả được thực hiện hoàn toàn bên ngoài bởi tiến trình Node.js cha.
-3. **Triệt tiêu zombie và fork bomb:** Sử dụng `dumb-init` làm init container kết hợp `PR_SET_CHILD_SUBREAPER` và `RLIMIT_NPROC=20` đảm bảo fork bomb bị chặn đứng ở mức nhân và toàn bộ tiến trình rác bị thu hồi ngay lập tức sau khi hết thời gian chạy, không làm cạn kiệt bảng tiến trình của hệ thống.
-4. **Đo lường bộ nhớ và thời gian chính xác:** Launcher cha chờ tiến trình con thông qua `wait4()`, thu thập chính xác số liệu `rusage.ru_maxrss` (bộ nhớ thực tế tính bằng KB) và thời gian CPU thực tế. Tiến trình Node.js giám sát wall-clock time để xử lý cả vòng lặp CPU lẫn trạng thái ngủ (`sleep`).
+1. **Hoạt động 100% trong `docker run` mặc định:** Cơ chế chuyển user sang non-root (`sandbox` UID 10001), phân quyền filesystem DAC chuẩn Unix (`/app` 0700 root), POSIX `setrlimit` và `PR_SET_NO_NEW_PRIVS` kết hợp Seccomp filter là các tính năng chuẩn của nhân Linux, được Docker daemon cho phép mặc định mà không cần cấp quyền bổ sung.
+2. **Cô lập cả khâu biên dịch và chạy:** Cả `g++` và binary đều chạy dưới UID sandbox. Trình biên dịch không thể `#include` file nhạy cảm trong `/app/hidden_tests/secret.txt` hay `/app/cases/*/expected.txt`.
+3. **Triệt tiêu hoàn toàn tiến trình mồ côi / thoát session:** Bằng cách kết hợp `kill(-pgid, SIGKILL)` và quét `/proc` tìm tất cả PID mang `UID == 10001`, runner đảm bảo dọn sạch mọi tiến trình con dù có gọi `setsid()` hay đóng stdout/stderr để giữ kết nối.
+4. **Bảo vệ bộ nhớ runner trước stderr flooding:** Dữ liệu stderr được giới hạn tối đa 64 KB trong bộ nhớ runner, ngăn chặn triệt để lỗi sập Node.js `ERR_STRING_TOO_LONG`.
+5. **Đo lường bộ nhớ và thời gian chính xác:** Launcher cha chờ tiến trình con thông qua `wait4()`, thu thập chính xác số liệu `rusage.ru_maxrss` (bộ nhớ thực tế tính bằng KB) và thời gian CPU thực tế. Tiến trình Node.js giám sát wall-clock time để xử lý cả vòng lặp CPU lẫn trạng thái ngủ (`sleep`).
 
 ---
 
@@ -58,46 +72,56 @@ Output thật từ terminal:
 ========================================================================================
                 CPPDSA P2 SPIKE SANDBOX RUNNER - TEST SUITE                             
 ========================================================================================
-Tìm thấy 27 ca kiểm thử trong /app/cases.
+Tìm thấy 37 ca kiểm thử trong /app/cases.
 
 ca | mode | kỳ vọng | thực tế | thời gian ms | bộ nhớ KB | PASS/FAIL
 ----------------------------------------------------------------------------------------
-01_reg_ac_standard       | standard | AC      | AC      |           15 |      3192 | PASS
-02_reg_ac_template       | template | AC      | AC      |           14 |      3076 | PASS
-03_reg_ac_free           | free     | AC      | AC      |           13 |      3272 | PASS
-04_reg_wa_standard       | standard | WA      | WA      |           14 |      3392 | PASS
-05_reg_wa_template       | template | WA      | WA      |           13 |      3208 | PASS
-06_reg_wa_free           | free     | WA      | WA      |           13 |      3272 | PASS
-07_reg_ce_standard       | standard | CE      | CE      |            0 |         0 | PASS
-08_reg_ce_template       | template | CE      | CE      |            0 |         0 | PASS
-09_reg_ce_free           | free     | CE      | CE      |            0 |         0 | PASS
-10_reg_re_segfault       | standard | RE      | RE      |           13 |       956 | PASS
-11_reg_re_abort          | standard | RE      | RE      |           13 |      3036 | PASS
-12_reg_re_divzero        | standard | RE      | RE      |           13 |       964 | PASS
-13_reg_re_exit_code      | standard | RE      | RE      |           12 |      1008 | PASS
-14_tle_cpu               | standard | TLE     | TLE     |         1063 |         0 | PASS
-15_tle_sleep             | standard | TLE     | TLE     |         1063 |         0 | PASS
-16_mle_alloc             | standard | MLE     | MLE     |           31 |     62716 | PASS
-17_attack_forkbomb       | standard | TLE     | TLE     |         1070 |         0 | PASS
-18_attack_write_outside  | standard | WA      | WA      |           14 |      3256 | PASS
-19_attack_read_hidden    | standard | WA      | WA      |           13 |      3308 | PASS
-20_attack_network        | standard | WA      | WA      |           13 |      3648 | PASS
-21_attack_huge_output    | standard | OLE     | OLE     |           13 |         0 | PASS
-22_attack_env_secret     | standard | WA      | WA      |           14 |      3344 | PASS
-23_attack_kill_parent    | standard | WA      | WA      |           13 |      3388 | PASS
-24_attack_spoof_result   | standard | WA      | WA      |           13 |      3308 | PASS
-25_cheat_template_inspect | template | WA      | WA      |           13 |      3332 | PASS
-26_cheat_free_inspect    | free     | WA      | WA      |           14 |      3212 | PASS
-final_ac_recovery        | standard | AC      | AC      |           14 |      3348 | PASS
+01_reg_ac_standard         | standard | AC      | AC      |           14 |      3296 | PASS
+02_reg_ac_template         | template | AC      | AC      |           14 |      3360 | PASS
+03_reg_ac_free             | free     | AC      | AC      |           13 |      3240 | PASS
+04_reg_wa_standard         | standard | WA      | WA      |           13 |      3420 | PASS
+05_reg_wa_template         | template | WA      | WA      |           13 |      3360 | PASS
+06_reg_wa_free             | free     | WA      | WA      |           13 |      3240 | PASS
+07_reg_ce_standard         | standard | CE      | CE      |          184 |         0 | PASS
+08_reg_ce_template         | template | CE      | CE      |          202 |         0 | PASS
+09_reg_ce_free             | free     | CE      | CE      |          284 |         0 | PASS
+10_reg_re_segfault         | standard | RE      | RE      |           13 |      1160 | PASS
+11_reg_re_abort            | standard | RE      | RE      |           13 |      3036 | PASS
+12_reg_re_divzero          | standard | RE      | RE      |           13 |      1180 | PASS
+13_reg_re_exit_code        | standard | RE      | RE      |           13 |      1224 | PASS
+14_tle_cpu                 | standard | TLE     | TLE     |         1090 |     28328 | PASS
+15_tle_sleep               | standard | TLE     | TLE     |         1090 |     48636 | PASS
+16_mle_alloc               | standard | MLE     | MLE     |           32 |     62720 | PASS
+17_attack_forkbomb         | standard | TLE     | TLE     |         1098 |     28076 | PASS
+18_attack_write_outside    | standard | WA      | WA      |           13 |      3308 | PASS
+19_attack_read_hidden      | standard | WA      | WA      |           14 |      3376 | PASS
+20_attack_network          | standard | WA      | WA      |           13 |      3780 | PASS
+21_attack_huge_output      | standard | OLE     | OLE     |           41 |     65564 | PASS
+22_attack_env_secret       | standard | WA      | WA      |           13 |      3344 | PASS
+23_attack_kill_parent      | standard | WA      | WA      |           14 |      3388 | PASS
+24_attack_spoof_result     | standard | WA      | WA      |           14 |      3344 | PASS
+25_cheat_template_inspect  | template | WA      | WA      |           13 |      3276 | PASS
+26_cheat_free_inspect      | free     | WA      | WA      |           13 |      3200 | PASS
+c1_compile_include_secret  | standard | CE      | CE      |           20 |         0 | PASS
+c2_compile_include_devzero | standard | CE      | CE      |          375 |         0 | PASS
+q1_read_case_expected      | standard | AC      | AC      |           13 |      3444 | PASS
+q3_persist_write           | standard | AC      | AC      |           14 |      3248 | PASS
+q3b_persist_verify         | standard | AC      | AC      |           13 |      3208 | PASS
+q4_escape_setsid           | standard | AC      | AC      |           40 |      3296 | PASS
+q4b_escape_closefd         | standard | AC      | AC      |           40 |      3188 | PASS
+q5_check_survivors         | standard | AC      | AC      |           14 |      3232 | PASS
+q6_stderr_flood            | standard | AC      | AC      |          424 |      3420 | PASS
+q7_proc_environ            | standard | AC      | AC      |           14 |      3480 | PASS
+q8_multi_proc_memory       | standard | TLE/MLE | TLE     |         1089 |     31808 | PASS
 ----------------------------------------------------------------------------------------
 
 --- KIỂM TRA PHỤC HỒI WORKER SAU TOÀN BỘ CÁC CA TẤN CÔNG & MLE ---
-Worker Recovery Check: PASS (AC, thời gian 14 ms, bộ nhớ 3344 KB)
+Worker Recovery Check: PASS (AC, thời gian 14 ms, bộ nhớ 3320 KB)
 ========================================================================================
-Tổng số ca kiểm thử  : 27
-Số ca ĐẠT (PASS)     : 27
+Tổng số ca kiểm thử  : 38
+Số ca ĐẠT (PASS)     : 38
 Số ca THẤT BẠI (FAIL): 0
-Tổng thời gian suite : 10019 ms
+Tổng thời gian suite : 14910 ms
 ========================================================================================
 ```
 
@@ -115,29 +139,29 @@ Output thật từ terminal:
 === P2 BENCHMARK: CPU-bound 10 Runs ===
 Biên dịch bench.cpp với g++ -std=c++17 -O2...
 Bắt đầu đo 10 lần chạy trong sandbox:
-  Lần  1: 272 ms (output: 148933)
-  Lần  2: 261 ms (output: 148933)
-  Lần  3: 266 ms (output: 148933)
-  Lần  4: 248 ms (output: 148933)
-  Lần  5: 249 ms (output: 148933)
-  Lần  6: 247 ms (output: 148933)
-  Lần  7: 253 ms (output: 148933)
-  Lần  8: 247 ms (output: 148933)
-  Lần  9: 249 ms (output: 148933)
-  Lần 10: 248 ms (output: 148933)
+  Lần  1: 274 ms (output: 148933)
+  Lần  2: 279 ms (output: 148933)
+  Lần  3: 267 ms (output: 148933)
+  Lần  4: 250 ms (output: 148933)
+  Lần  5: 248 ms (output: 148933)
+  Lần  6: 250 ms (output: 148933)
+  Lần  7: 250 ms (output: 148933)
+  Lần  8: 248 ms (output: 148933)
+  Lần  9: 250 ms (output: 148933)
+  Lần 10: 251 ms (output: 148933)
 --------------------------------------------------
 Số lần chạy        : 10
-Min                : 247 ms
-Max                : 272 ms
-Mean (Trung bình)  : 254.00 ms
-StdDev (Độ lệch)   : 8.59 ms (3.38%)
-(Max - Min) / Mean : 9.84%
+Min                : 248 ms
+Max                : 279 ms
+Mean (Trung bình)  : 256.70 ms
+StdDev (Độ lệch)   : 11.25 ms (4.38%)
+(Max - Min) / Mean : 12.08%
 --------------------------------------------------
 ```
 
 Nhận xét:
-- Độ lệch chuẩn là 3.38%, khoảng biến thiên (Max - Min)/Mean đạt 9.84%, ổn định vượt mức kỳ vọng đề xuất ban đầu (≤ 20%).
-- Thời gian chạy trung bình 254.00 ms tạo cơ sở chuẩn (baseline) vững chắc để so sánh khi deploy lên Render free instance ở P2 tiếp theo.
+- Độ lệch chuẩn là 4.38%, khoảng biến thiên (Max - Min)/Mean đạt 12.08%, ổn định vượt mức yêu cầu thiết kế ban đầu (≤ 20%).
+- Thời gian chạy trung bình 256.70 ms cung cấp baseline tin cậy cho việc so sánh hiệu năng trên Render free instance ở P2 tiếp theo.
 
 ---
 
@@ -145,14 +169,14 @@ Nhận xét:
 
 | STT | Tiêu chí nghiệm thu P2 (PROJECT_PLAN mục 9) | Kết quả kiểm chứng Local | Trạng thái | Bằng chứng |
 |:---:|:---|:---:|:---:|:---|
-| 1 | Bộ mẫu ≥ 12 chương trình: AC/WA/CE/RE phân loại đúng 100%. | Phủ 13 ca thường (3 AC, 3 WA, 3 CE, 4 RE) ở cả template, free và standard mode; phân loại đúng 100%. | **ĐẠT** | Bảng kết quả bộ ca (ca 01–13 đều PASS). |
-| 2 | Vòng lặp vô hạn bị dừng trong ≤ TL + 0,5 giây và phân loại TLE. | Đo được 1063 ms cho CPU infinite loop và 1063 ms cho sleep (TL = 1000 ms, ngưỡng tối đa 1500 ms). | **ĐẠT** | Ca 14_tle_cpu (1063 ms) và 15_tle_sleep (1063 ms) đều PASS. |
-| 3 | Cấp phát vượt ML bị dừng và phân loại MLE; không làm chết worker/container. | Cấp phát khối bộ nhớ vượt 64 MB bị kernel từ chối, ném `std::bad_alloc`, phân loại MLE. Worker tiếp tục chạy bình thường. | **ĐẠT** | Ca 16_mle_alloc phân loại MLE, bộ nhớ đo được 62716 KB, các ca sau chạy trơn tru. |
-| 4 | Fork bomb, ghi file ngoài thư mục tạm, truy cập mạng và output khổng lồ bị chặn; mô tả rủi ro còn lại. | Toàn bộ 10 ca tấn công bị chặn: fork bomb bị chặn ở NPROC=20; ghi file ngoài bị EACCES; mạng/DNS bị EPERM bởi Seccomp; output khổng lồ bị cắt ở 256 KB thành OLE. | **ĐẠT** | Ca 17–26 đều PASS và xác minh hiệu ứng thật trên filesystem/network. |
+| 1 | Bộ mẫu ≥ 12 chương trình: AC/WA/CE/RE phân loại đúng 100%. | Đạt 13 ca thông thường chuẩn (3 AC, 3 WA, 3 CE, 4 RE) ở cả template, free và standard mode; phân loại đúng 100%. | **ĐẠT** | Bảng kết quả (ca 01–13 đều PASS). |
+| 2 | Vòng lặp vô hạn bị dừng trong ≤ TL + 0,5 giây và phân loại TLE. | Đo được 1090 ms cho CPU infinite loop và 1090 ms cho sleep (TL = 1000 ms, ngưỡng tối đa 1500 ms). | **ĐẠT** | Ca 14_tle_cpu (1090 ms) và 15_tle_sleep (1090 ms) đều PASS. |
+| 3 | Cấp phát vượt ML bị dừng và phân loại MLE; không làm chết worker/container. | Cấp phát mảng lớn vượt 64 MB bị kernel từ chối qua RLIMIT_AS, ném `std::bad_alloc`, phân loại MLE. Worker tiếp tục chạy bình thường. | **ĐẠT** | Ca 16_mle_alloc phân loại MLE, bộ nhớ 62720 KB, worker phục hồi hoàn toàn. |
+| 4 | Fork bomb, ghi file ngoài thư mục tạm, truy cập mạng và output khổng lồ bị chặn; mô tả rủi ro còn lại. | Toàn bộ các ca tấn công bị chặn: fork bomb bị chặn ở NPROC=20; ghi ngoài thư mục tạm bị EACCES; mạng/DNS bị EPERM bởi Seccomp; output khổng lồ bị cắt ở 256 KB thành OLE; escape setsid/closefd bị tiêu diệt; stderr flood không làm sập runner. | **ĐẠT** | Ca 17–26, c1–c2, q1–q8 đều PASS; hiệu ứng thực tế được kiểm chứng độc lập. |
 | 5 | Chạy trong container không privileged; thử trên Render thật nếu người dùng cho phép. | Kiểm chứng thành công trong container chạy không cờ `--privileged`, không `--cap-add`, không `--security-opt`. | **ĐẠT (Local)** / **CẦN RENDER** | Lệnh chạy chuẩn Docker; việc thử trên Render thật thuộc task kế tiếp. |
-| 6 | Xác nhận Docker/Render có thể áp dụng các giới hạn tài nguyên cần thiết ở mức chấp nhận được. | Trên Docker Desktop Linux engine: rlimit (CPU, AS, NPROC, FSIZE), Seccomp filter và DAC permissions hoạt động hoàn hảo. | **ĐẠT (Local)** / **CẦN RENDER** | Xác minh thành công trên local engine; cần kiểm tra khả năng áp dụng trên Render. |
-| 7 | Trên Render free: đo 10 lần cùng chương trình (độ lệch ≤ 20%) và cold start. | Đã đo local 10 lần: Mean 254.00 ms, StdDev 3.38%, Spread 9.84%. | **CẦN RENDER** | Đã sẵn sàng script `bench.mjs` để chạy trực tiếp trên Render ở task kế tiếp. |
-| 8 | Chương trình sinh viên không đọc được expected output và không giả được kết quả chấm ở cả hai mode. | Kiểm tra thành công cả Template mode và Free mode: không thể đọc `/app/hidden_tests`, secret env bị cô lập, không giả mạo được file kết quả hay verdict. | **ĐẠT** | Ca 24_attack_spoof_result, 25_cheat_template_inspect và 26_cheat_free_inspect đều PASS. |
+| 6 | Xác nhận Docker/Render có thể áp dụng các giới hạn tài nguyên cần thiết ở mức chấp nhận được. | Trên Docker Desktop Linux engine: rlimit (CPU, AS, NPROC, FSIZE), Seccomp filter và DAC permissions hoạt động chuẩn xác. | **ĐẠT (Local)** / **CẦN RENDER** | Xác minh thành công trên local engine; cần kiểm tra khả năng áp dụng trên Render. |
+| 7 | Trên Render free: đo 10 lần cùng chương trình (độ lệch ≤ 20%) và cold start. | Đã đo local 10 lần: Mean 256.70 ms, StdDev 4.38%, Spread 12.08% (≤ 20%). | **CẦN RENDER** | Đã sẵn sàng script `bench.mjs` để chạy trực tiếp trên Render ở task kế tiếp. |
+| 8 | Chương trình sinh viên không đọc được expected output và không giả được kết quả chấm ở cả hai mode. | Kiểm tra thành công cả Template mode và Free mode: không thể đọc `/app` (0700), không thể đọc expected/test ẩn cả lúc biên dịch (c1) lẫn lúc chạy (q1), secret env bị cô lập, không giả mạo được verdict. | **ĐẠT** | Ca 24, 25, 26, c1, q1, q7 đều PASS. |
 
 ---
 
@@ -160,10 +184,10 @@ Nhận xét:
 
 | Rủi ro kỹ thuật | Mức độ | Mô tả chi tiết | Biện pháp giảm thiểu đã áp dụng & khuyến nghị cho P4 |
 |:---|:---:|:---|:---|
-| **Rủi ro môi trường Render không hỗ trợ Seccomp** | Trung bình | Gói Render free web service chạy container trên hạ tầng đám mây dùng chung. Nếu hạ tầng Render kích hoạt Docker seccomp chặn syscall `seccomp()`, bộ lọc libseccomp sẽ không tải được. | Launcher được thiết kế kiểm tra lỗi chặt chẽ. Nếu Render chặn `seccomp()`, fallback sử dụng iptables/network unshare hoặc cấu hình container không có outbound route. Cần xác minh ở P2 vòng 2 (Render). |
-| **Độ trễ và biến thiên CPU trên Render Free** | Trung bình | CPU trên gói miễn phí có thể bị hiện tượng "noisy neighbor" (chia sẻ CPU với container khác), dẫn đến thời gian thực thi trồi sụt. | PROJECT_PLAN mục 3.3 đã định hướng: tính TL theo hệ số so với lời giải mẫu chạy trên chính worker, hoặc đặt grace period hợp lý (500 ms) như đã kiểm chứng. |
-| **Tấn công cạn kiệt Inode hoặc Disk Space cục bộ** | Thấp | Tiến trình sinh viên có thể tạo hàng nghìn tệp nhỏ bên trong `/tmp/run_<case_id>` dù bị giới hạn kích thước từng tệp qua `RLIMIT_FSIZE`. | Launcher đã giới hạn số bộ mô tả tệp mở `RLIMIT_NOFILE=32`. Runner luôn xóa đệ quy thư mục `/tmp/run_<case_id>` ngay sau khi chạy xong ca chấm. |
-| **Tràn bộ đệm Stderr** | Thấp | Sinh viên có thể cố tình in dữ liệu cực lớn ra stderr thay vì stdout. | Runner đã giới hạn dung lượng lưu trữ stderr tối đa ở mức 64 KB, bỏ qua phần dữ liệu thừa. |
+| **Tổng bộ nhớ đa tiến trình (Ca q8: TLE thay vì MLE)** | Trung bình | Giới hạn `RLIMIT_AS` của nhân Linux được áp dụng theo từng tiến trình độc lập thay vì tổng phân cấp nhóm tiến trình (khác với `memory.max` của cgroup). Nếu tiến trình con fork nhiều tiến trình cùng cấp phát bộ nhớ dưới ML, tổng bộ nhớ thực tế có thể vượt quá ML mà không bị trigger bad_alloc ngay lập tức, dẫn đến TLE thay vì MLE. | Giới hạn `RLIMIT_NPROC=20` (hoặc thấp hơn, vd 10) ngăn việc nhân bản tiến trình ồ ạt; thiết lập `--memory 1g` ở mức container Docker ngoài cùng để bảo vệ hệ thống; runner vẫn sống sót an toàn sau ca q8. |
+| **Quét /proc một lượt để diệt tiến trình thoát session** | Thấp | Runner và launcher sử dụng vòng lặp duyệt `/proc` nhiều lần (4–5 lần kèm micro-sleep) để tìm và gửi `SIGKILL` tới mọi tiến trình mang UID 10001 (sandbox). Trong trường hợp lý thuyết cực đoan (high-frequency fork/exec fork bomb lẩn trốn), một tiến trình có thể spawn sau khi vòng quét kết thúc. | Kết hợp thu hồi bằng subreaper (`PR_SET_CHILD_SUBREAPER`), `RLIMIT_NPROC=20` làm nghẽn fork bomb, và kiểm tra không còn tiến trình sandbox nào sống sót trước khi chấm ca kế tiếp (ca `q5_check_survivors` xác nhận không còn tiến trình rác). |
+| **Tính khả dụng của Seccomp và Rlimit trên Render Free** | Trung bình | Hạ tầng Render free web service chạy trên môi trường container chia sẻ của nhà cung cấp đám mây. Chưa xác minh liệu Docker runtime của Render có cho phép syscall `seccomp()` không bị chặn bởi seccomp profile mặc định của Render hay không, và liệu các rlimit có bị hạn chế bởi cgroup v2 của host hay không. | Cần chạy lệnh kiểm chứng trực tiếp trên Render ở task tiếp theo (T-0004); launcher đã có mã kiểm tra lỗi trả về cụ thể để phát hiện sớm. |
+| **Biến thiên CPU trên Render Free (Noisy Neighbors)** | Trung bình | CPU trên gói Render miễn phí chia sẻ tài nguyên với các container khác, có thể dẫn đến thời gian chạy dao động vượt mức 20%. | Đã chuẩn bị sẵn `bench.mjs` để đo 10 lần trên Render. Nếu độ lệch cao, áp dụng cơ chế tính TL theo tỷ lệ tương đối so với bài giải mẫu của giảng viên (PROJECT_PLAN §3.3). |
 
 ---
 
