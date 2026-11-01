@@ -161,15 +161,16 @@ Environment Variables:
 
 | Biến | Giá trị | Ghi chú |
 |---|---|---|
-| `NODE_ENV` | `production` | Bật cookie `Secure`. Dockerfile hiện chưa đặt biến này. |
+| `NODE_ENV` | `production` | Bật cookie `Secure` và kiểm cấu hình lúc khởi động (thiếu `GRADER_SECRET`/`COOKIE_SECRET` hoặc `DATABASE_URL` trỏ localhost → API thoát kèm thông báo). `src/api/Dockerfile` đã đặt sẵn. |
 | `DATABASE_URL` | `<APP_URL>` | Role ứng dụng. Lúc khởi động API chạy `migrate:up`; nếu không có migration mới thì role app chạy được (đã thử local). Migration mới → chạy bước 1.4 bằng MIGRATOR_URL TRƯỚC khi deploy code mới. |
 | `GRADER_URL` | `<GRADER_PUBLIC_URL>` | vd `https://cppdsa-grader.onrender.com` |
 | `GRADER_SECRET` | `<GRADER_SECRET>` | Giống hệt grader. |
 | `API_BASE_URL` | `https://cppdsa-api.onrender.com` | URL công khai của chính API — grader gọi callback vào đây. Sửa lại nếu Render đặt URL khác. |
 | `COOKIE_SECRET` | `<COOKIE_SECRET>` | |
-| `TRUST_PROXY` | `2` | Chỉ có tác dụng sau T-0011; xác minh ở mục 6.4. |
-| `LOGIN_RATE_LIMIT_MAX` | `10` | Sau T-0011 là theo email. |
-| `GLOBAL_RATE_LIMIT_MAX` | `300` | Sau T-0011 là theo người dùng. |
+| `TRUST_PROXY` | `2` | Số hop proxy tin cậy (Vercel → Render) `[CẦN XÁC MINH ở mục 6 bước 4]`. |
+| `LOGIN_RATE_LIMIT_MAX` | `10` | Số lần đăng nhập/phút/email. |
+| `LOGIN_IP_RATE_LIMIT_MAX` | `100` | Số lần đăng nhập/phút/IP (cả phòng máy chung NAT vẫn đủ). |
+| `GLOBAL_RATE_LIMIT_MAX` | `300` | Request/phút/người dùng (chưa đăng nhập: theo IP). |
 
 Kiểm: `https://cppdsa-api.onrender.com/health` → 200. Logs (tab **Logs**) có `Migrations complete!` và `API server listening`.
 

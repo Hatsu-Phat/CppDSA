@@ -13,6 +13,22 @@ export interface AuthRouteOptions {
   config: ApiConfig;
 }
 
+export const emailLoginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+export function resetEmailLoginAttemptsForTest(): void {
+  emailLoginAttempts.clear();
+}
+
+// Periodic cleanup every 60s
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of emailLoginAttempts.entries()) {
+    if (val.resetAt <= now) {
+      emailLoginAttempts.delete(key);
+    }
+  }
+}, 60000).unref();
+
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
   const { pool, config } = options;
 
@@ -22,13 +38,14 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
     {
       config: {
         rateLimit: {
-          max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 10),
+          max: () =>
+            Number(process.env.LOGIN_IP_RATE_LIMIT_MAX || config.loginIpRateLimitMax || 100),
           timeWindow: 60 * 1000,
           keyGenerator: (req) => req.ip,
           errorResponseBuilder: () => ({
             statusCode: 429,
             error: 'Too Many Requests',
-            message: 'Đăng nhập quá 10 lần trong 1 phút. Vui lòng thử lại sau.',
+            message: 'Quá nhiều yêu cầu đăng nhập từ địa chỉ IP của bạn. Vui lòng thử lại sau.',
           }),
         },
       },
@@ -43,9 +60,30 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         });
       }
 
+      // Check email-based rate limit
+      const normalizedEmail = email.trim().toLowerCase();
+      const maxEmailAttempts = Number(
+        process.env.LOGIN_RATE_LIMIT_MAX || config.loginRateLimitMax || 10
+      );
+      const now = Date.now();
+      const record = emailLoginAttempts.get(normalizedEmail);
+
+      if (record && record.resetAt > now) {
+        if (record.count >= maxEmailAttempts) {
+          return reply.code(429).send({
+            statusCode: 429,
+            error: 'Too Many Requests',
+            message: 'Đăng nhập quá 10 lần trong 1 phút. Vui lòng thử lại sau.',
+          });
+        }
+        record.count++;
+      } else {
+        emailLoginAttempts.set(normalizedEmail, { count: 1, resetAt: now + 60 * 1000 });
+      }
+
       const res = await pool.query(
         'SELECT id, email, password_hash, full_name, role, must_change_password FROM users WHERE email = $1',
-        [email.trim().toLowerCase()]
+        [normalizedEmail]
       );
 
       if (res.rowCount === 0) {

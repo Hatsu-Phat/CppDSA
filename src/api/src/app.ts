@@ -3,7 +3,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import pg from 'pg';
-import { ApiConfig, config as defaultConfig } from './config.js';
+import { ApiConfig, buildConfig, config as defaultConfig } from './config.js';
 import { hashToken } from './utils/security.js';
 import { runRecovery } from './services/recovery.js';
 import { authRoutes } from './routes/auth.js';
@@ -30,15 +30,19 @@ export interface AppOptions {
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
-  const cfg: ApiConfig = {
+  const cfg: ApiConfig = buildConfig({
     ...defaultConfig,
     ...options.config,
+    nodeEnv:
+      options.config?.nodeEnv ||
+      (process.env.NODE_ENV === 'test' ? 'test' : options.config?.nodeEnv),
     now: options.now || options.config?.now || defaultConfig.now,
-  };
+  });
   const pool = options.pool || new pg.Pool({ connectionString: cfg.databaseUrl, max: 5 });
 
   // Structured logging with pino and strict credential/code redaction
   const app = Fastify({
+    trustProxy: cfg.trustProxy as any,
     logger:
       cfg.nodeEnv !== 'test'
         ? {
@@ -68,9 +72,44 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     bodyLimit: 10 * 1024 * 1024,
   });
 
+  // Global error handler: ensure 5xx errors never leak PostgreSQL codes or internals
+  app.setErrorHandler((error: any, request, reply) => {
+    const statusCode = error.statusCode || 500;
+    if (statusCode >= 500) {
+      request.log.error(error);
+      return reply.code(500).send({
+        error: 'INTERNAL_SERVER_ERROR',
+        message: 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.',
+      });
+    }
+
+    return reply.status(statusCode).send(error);
+  });
+
   // 1. Plugins
   app.register(fastifyCookie, {
     secret: cfg.cookieSecret,
+  });
+
+  // UUID validation hook: any path param :id or :studentId must be valid UUID before DB queries
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  app.addHook('preValidation', async (request, reply) => {
+    const params = request.params as Record<string, string> | undefined;
+    if (params && typeof params === 'object') {
+      if (params.id !== undefined && !UUID_REGEX.test(params.id)) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'Mã không hợp lệ',
+        });
+      }
+      if (params.studentId !== undefined && !UUID_REGEX.test(params.studentId)) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'Mã không hợp lệ',
+        });
+      }
+    }
   });
 
   // 2. Authentication hook (runs on every request in preValidation, before preHandler rate limits)
@@ -111,21 +150,22 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
   });
 
-  const globalApiLimit = Number(process.env.GLOBAL_RATE_LIMIT_MAX || 300);
   app.register(fastifyRateLimit, {
     global: true,
-    max: globalApiLimit,
+    max: () => Number(process.env.GLOBAL_RATE_LIMIT_MAX || cfg.globalRateLimitMax || 300),
     timeWindow: 60 * 1000,
     hook: 'preHandler',
-    keyGenerator: (req) => req.ip,
+    keyGenerator: (req) => (req.user?.id ? `user:${req.user.id}` : `ip:${req.ip}`),
     allowList: (req) => {
       const url = req.url.split('?')[0];
       return url === '/health';
     },
-    errorResponseBuilder: () => ({
+    errorResponseBuilder: (req) => ({
       statusCode: 429,
       error: 'Too Many Requests',
-      message: 'Quá nhiều yêu cầu từ địa chỉ IP của bạn. Vui lòng thử lại sau.',
+      message: req.user
+        ? 'Quá nhiều yêu cầu từ tài khoản của bạn. Vui lòng thử lại sau.'
+        : 'Quá nhiều yêu cầu từ địa chỉ IP của bạn. Vui lòng thử lại sau.',
     }),
   });
 

@@ -113,7 +113,7 @@ export class JobQueue {
       };
       console.log(JSON.stringify(logEntry));
 
-      this.recentMetrics.set(nextItem.job.submissionId, {
+      this.recordJobMetric(nextItem.job.submissionId, {
         queueMs,
         compileMs,
         runMs,
@@ -127,6 +127,23 @@ export class JobQueue {
       this.activeMemoryMb -= jobMem;
       this.processNext();
     })();
+  }
+
+  public recordJobMetric(
+    submissionId: string,
+    metric: { queueMs: number; compileMs: number; runMs: number; totalMs: number }
+  ): void {
+    this.recentMetrics.set(submissionId, metric);
+    if (this.recentMetrics.size > 1000) {
+      const oldestKey = this.recentMetrics.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.recentMetrics.delete(oldestKey);
+      }
+    }
+  }
+
+  public getRecentMetricsSize(): number {
+    return this.recentMetrics.size;
   }
 
   public getJobMetrics(submissionId: string):

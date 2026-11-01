@@ -32,6 +32,7 @@ const GRADER_BASE = await resolveUrl(
 
 console.log(`[LoadTest] Using API: ${API_BASE}`);
 console.log(`[LoadTest] Using Grader: ${GRADER_BASE}`);
+const GRADER_SECRET = process.env.GRADER_SECRET || 'dev-grader-secret';
 
 function getArg(flag, defaultValue) {
   const idx = process.argv.indexOf(flag);
@@ -251,7 +252,9 @@ async function main() {
         let compileTimeMs = 0;
         let runTimeMs = 0;
         try {
-          const mRes = await fetch(`${GRADER_BASE}/jobs/${subId}/metrics`);
+          const mRes = await fetch(`${GRADER_BASE}/jobs/${subId}/metrics`, {
+            headers: { 'X-Grader-Secret': GRADER_SECRET },
+          });
           if (mRes.ok) {
             const mData = await mRes.json();
             queueTimeMs = mData.queueMs || 0;
@@ -380,7 +383,9 @@ async function main() {
         let compileTimeMs = 0;
         let runTimeMs = 0;
         try {
-          const mRes = await fetch(`${GRADER_BASE}/jobs/${subId}/metrics`);
+          const mRes = await fetch(`${GRADER_BASE}/jobs/${subId}/metrics`, {
+            headers: { 'X-Grader-Secret': GRADER_SECRET },
+          });
           if (mRes.ok) {
             const mData = await mRes.json();
             queueTimeMs = mData.queueMs || 0;

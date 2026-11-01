@@ -21,5 +21,6 @@ RUN npm run --workspace=src/shared build
 RUN npm run --workspace=src/api build
 
 WORKDIR /app/src/api
+ENV NODE_ENV=production
 EXPOSE 4000
 CMD ["sh", "-c", "npm run migrate:up && npm run start"]
