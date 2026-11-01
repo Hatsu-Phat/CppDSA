@@ -308,3 +308,10 @@
 - Lệnh 3 (0.15 CPU/512 MB): `Summary: 58/58 cases PASSED`; ca FREE mới: in cứng bằng `if/cout` → AC, thiếu `main` → CE, harness cũ bị bỏ qua → AC ✔.
 - Ghi chú: `dispatchSubmissionToGrader` không kiểm `res.ok` khi grader trả 4xx/5xx → bài ở PENDING và được recovery gửi lại sau 2 phút (trước đây đánh SYSTEM_ERROR ngay). Chấp nhận.
 - Kết luận: PASS. Merge `task/T-0012` → main.
+
+### T-0013 vòng 1 — giao diện FTISU CodeLab — nghiệm thu — 2026-11-02
+- Lượt agy dừng sau 830 s: `RESOURCE_EXHAUSTED (429) Individual quota reached … Resets in 28h52m` — mã đã viết, chưa tự chạy kiểm chứng, không có `handoff/reports/T-0013.md`.
+- Claude chạy lệnh 1: lint 0 lỗi (3 warning biến thừa), build OK, api/grader/shared pass; web `1 failed | 28 passed` (test trang chủ còn kỳ vọng tiêu đề `CppDSA`) → FAIL.
+- Lệnh 2 (compose + Playwright): lecturer PASS (gồm nhập bộ test từ file, sửa điểm, chấm lại); student FAIL chỉ ở kiểm tra cuối: 1 lỗi console `401 (Unauthorized)` do trang chủ gọi `/api/auth/me` khi chưa đăng nhập; các bước chức năng trước đó đều qua.
+- Xem 9 ảnh (bản sao tại scratchpad Claude): trang chủ/đăng nhập/tài khoản/làm bài/lịch sử/nhập test/chi tiết bài nộp đúng yêu cầu; `home-dark.png` không khác `home-light.png` (chưa chứng minh được chế độ tối); chi tiết bài nộp (GV) hiện JSON vùng code thô và trạng thái `COMPLETED` thô.
+- Kết luận: FAIL vòng 1 → phản hồi đã ghi vào `handoff/tasks/T-0013.md` (vòng 2/3). KHÔNG merge, KHÔNG deploy giao diện mới; production giữ giao diện cũ + backend T-0012 (tương thích: API bỏ qua `entryPointSpec`/`entry` do giao diện cũ gửi). Vòng 2 chờ quota agy reset (~29 giờ) hoặc người dùng cho phép Claude sửa trực tiếp.
