@@ -8,9 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libseccomp2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Tạo người dùng sandbox không đặc quyền (UID/GID 10001)
-RUN groupadd -g 10001 sandbox && \
-    useradd -u 10001 -g 10001 -m -s /bin/bash sandbox
+# Cấu hình SANDBOX_UID mặc định 2000000000 (tránh va chạm NPROC ngoài host trên Render)
+# và SPIKE_MEMORY_BUDGET_MB mặc định 384 MB (tránh OOM container 512 MiB)
+ARG SANDBOX_UID=2000000000
+ENV SANDBOX_UID=${SANDBOX_UID}
+ENV SPIKE_MEMORY_BUDGET_MB=384
+
+# Tạo người dùng sandbox không đặc quyền tương ứng SANDBOX_UID
+RUN groupadd -g ${SANDBOX_UID} sandbox && \
+    useradd -u ${SANDBOX_UID} -g ${SANDBOX_UID} -m -s /bin/bash -K UID_MAX=2147483647 sandbox
 
 WORKDIR /app
 
@@ -40,3 +46,4 @@ RUN mkdir -p /app/hidden_tests \
 EXPOSE 10000
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "server.mjs"]
+

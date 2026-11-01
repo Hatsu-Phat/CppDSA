@@ -24,6 +24,14 @@ int main(void) {
         int rlim_ok = 1, rlim_err = 0;
         int uid_ok = 1, uid_err = 0;
         int seccomp_ok = 1, seccomp_err = 0;
+        int fork_ok = 1, fork_err = 0, forked_count = 0;
+
+        uid_t sandbox_uid = 2000000000;
+        const char *env_uid = getenv("SANDBOX_UID");
+        if (env_uid && *env_uid) {
+            sandbox_uid = (uid_t)strtoul(env_uid, NULL, 10);
+        }
+        gid_t sandbox_gid = (gid_t)sandbox_uid;
 
         // 1. Test setrlimit (RLIMIT_AS and RLIMIT_CPU)
         struct rlimit rl;
@@ -41,16 +49,48 @@ int main(void) {
             rlim_err = errno;
         }
 
-        // 2. Test dropping privileges to sandbox UID 10001
-        if (setgroups(0, NULL) != 0 || setresgid(10001, 10001, 10001) != 0 || setresuid(10001, 10001, 10001) != 0) {
+        // Set RLIMIT_NPROC to current limit (20)
+        struct rlimit rl_nproc;
+        rl_nproc.rlim_cur = 20;
+        rl_nproc.rlim_max = 20;
+        if (setrlimit(RLIMIT_NPROC, &rl_nproc) != 0) {
+            rlim_ok = 0;
+            rlim_err = errno;
+        }
+
+        // 2. Test dropping privileges to sandbox UID
+        if (setgroups(0, NULL) != 0 || setresgid(sandbox_gid, sandbox_gid, sandbox_gid) != 0 || setresuid(sandbox_uid, sandbox_uid, sandbox_uid) != 0) {
             uid_ok = 0;
             uid_err = errno;
-        } else if (getuid() != 10001 || geteuid() != 10001 || getgid() != 10001 || getegid() != 10001) {
+        } else if (getuid() != sandbox_uid || geteuid() != sandbox_uid || getgid() != sandbox_gid || getegid() != sandbox_gid) {
             uid_ok = 0;
             uid_err = EPERM;
         }
 
-        // 3. Test seccomp_load
+        // 3. Test fork 5 children under sandbox UID with current NPROC (20)
+        if (uid_ok) {
+            pid_t children[5];
+            for (int i = 0; i < 5; ++i) {
+                pid_t cp = fork();
+                if (cp < 0) {
+                    fork_ok = 0;
+                    fork_err = errno;
+                    break;
+                } else if (cp == 0) {
+                    _exit(0);
+                } else {
+                    children[forked_count++] = cp;
+                }
+            }
+            for (int i = 0; i < forked_count; ++i) {
+                waitpid(children[i], NULL, 0);
+            }
+        } else {
+            fork_ok = 0;
+            fork_err = uid_err;
+        }
+
+        // 4. Test seccomp_load
         if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
             seccomp_ok = 0;
             seccomp_err = errno;
@@ -80,13 +120,14 @@ int main(void) {
             }
         }
 
-        printf("{\"setrlimit\":{\"ok\":%s,\"errno\":%d},\"setuid\":{\"ok\":%s,\"errno\":%d},\"seccomp_load\":{\"ok\":%s,\"errno\":%d}}\n",
+        printf("{\"setrlimit\":{\"ok\":%s,\"errno\":%d},\"setuid\":{\"ok\":%s,\"errno\":%d},\"seccomp_load\":{\"ok\":%s,\"errno\":%d},\"fork_test\":{\"ok\":%s,\"forked\":%d,\"errno\":%d}}\n",
                rlim_ok ? "true" : "false", rlim_err,
                uid_ok ? "true" : "false", uid_err,
-               seccomp_ok ? "true" : "false", seccomp_err);
+               seccomp_ok ? "true" : "false", seccomp_err,
+               fork_ok ? "true" : "false", forked_count, fork_err);
         fflush(stdout);
 
-        _exit((rlim_ok && uid_ok && seccomp_ok) ? 0 : 1);
+        _exit((rlim_ok && uid_ok && seccomp_ok && fork_ok) ? 0 : 1);
     }
 
     int status = 0;

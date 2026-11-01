@@ -9,6 +9,8 @@ const PORT = (process.env.PORT !== undefined && process.env.PORT !== '')
     ? parseInt(process.env.PORT, 10)
     : 10000;
 
+const SANDBOX_UID = parseInt(process.env.SANDBOX_UID || '2000000000', 10);
+
 const startTime = Date.now();
 let isTaskRunning = false;
 let runningTaskName = null;
@@ -61,20 +63,43 @@ function getProcSelfStatus() {
     return result;
 }
 
+function getSandboxProcessCount(uid) {
+    let count = 0;
+    try {
+        const entries = fs.readdirSync('/proc');
+        for (const entry of entries) {
+            if (!/^\d+$/.test(entry)) continue;
+            try {
+                const stat = fs.statSync(`/proc/${entry}`);
+                if (stat.uid === uid) {
+                    count++;
+                }
+            } catch (e) {}
+        }
+    } catch (e) {}
+    return count;
+}
+
 function runProbe() {
     try {
-        const probeOut = execFileSync('/usr/local/bin/probe', [], { encoding: 'utf-8', timeout: 5000 });
+        const probeOut = execFileSync('/usr/local/bin/probe', [], {
+            encoding: 'utf-8',
+            timeout: 5000,
+            env: { ...process.env, SANDBOX_UID: String(SANDBOX_UID) }
+        });
         const parsed = JSON.parse(probeOut.trim());
         return {
             setrlimit: parsed.setrlimit || { ok: false, errno: -1 },
             setuid: parsed.setuid || { ok: false, errno: -1 },
-            seccomp_load: parsed.seccomp_load || { ok: false, errno: -1 }
+            seccomp_load: parsed.seccomp_load || { ok: false, errno: -1 },
+            fork_test: parsed.fork_test || { ok: false, forked: 0, errno: -1 }
         };
     } catch (e) {
         return {
             setrlimit: { ok: false, errno: -1, error: e.message },
             setuid: { ok: false, errno: -1, error: e.message },
-            seccomp_load: { ok: false, errno: -1, error: e.message }
+            seccomp_load: { ok: false, errno: -1, error: e.message },
+            fork_test: { ok: false, forked: 0, errno: -1, error: e.message }
         };
     }
 }
@@ -119,6 +144,7 @@ const server = http.createServer((req, res) => {
             const procStatus = getProcSelfStatus();
             const probeResult = runProbe();
             const cgroupLimit = getCgroupMemoryLimit();
+            const sandboxProcCount = getSandboxProcessCount(SANDBOX_UID);
 
             const data = {
                 uname,
@@ -128,6 +154,9 @@ const server = http.createServer((req, res) => {
                 cgroupMemoryLimit: cgroupLimit,
                 uid: typeof process.getuid === 'function' ? process.getuid() : 0,
                 gid: typeof process.getgid === 'function' ? process.getgid() : 0,
+                sandboxUid: SANDBOX_UID,
+                sandboxProcCount,
+                sandboxProcessesCount: sandboxProcCount,
                 Seccomp: procStatus.Seccomp || 'unknown',
                 NoNewPrivs: procStatus.NoNewPrivs || 'unknown',
                 CapEff: procStatus.CapEff || 'unknown',
@@ -135,7 +164,9 @@ const server = http.createServer((req, res) => {
                 launcherProbe: probeResult,
                 setuid: probeResult.setuid,
                 setrlimit: probeResult.setrlimit,
-                seccomp_load: probeResult.seccomp_load
+                seccomp_load: probeResult.seccomp_load,
+                fork_test: probeResult.fork_test,
+                forkTest: probeResult.fork_test
             };
             return sendJson(res, 200, data);
         }

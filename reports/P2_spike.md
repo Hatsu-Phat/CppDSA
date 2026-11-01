@@ -234,3 +234,27 @@ Trong task tiếp theo khi triển khai spike lên Render:
    SPIKE_SECRET=<chuoi_bi_mat_ngau_nhien> node spike/p2/remote-check.mjs https://<service-name>.onrender.com
    ```
    Script sẽ tự động chạy theo thứ tự: đo Cold Start `/health` → gọi `/env-probe` kiểm tra Seccomp/Rlimit/UID → gọi `/run-suite` chạy 38 ca → gọi `/bench` đo 10 lần CPU-bound, và in toàn bộ kết quả tóm tắt dưới dạng JSON có cấu trúc.
+
+---
+
+## 8. Kết quả Thực tế trên Render Free và Cải tiến Vòng 2 (Task T-0004 Round 2)
+
+### 8.1. Kết quả kiểm tra trên Render Free thật (Service `cppdsa-spike`, Singapore)
+- `/env-probe` hoạt động tốt: UID tiến trình root = 0, `CapEff` = 0x400cb, `NoNewPrivs` = 1, cgroup memory = 512 MiB, các thao tác `setuid`, `setrlimit`, `seccomp_load` thành công.
+- Render metrics ghi nhận: `cpu_limit` = 0.15 CPU.
+
+### 8.2. Hai vấn đề phát sinh trên Render và giải pháp khắc phục
+1. **Lỗi `execve failed: Resource temporarily unavailable` (status 127) khi chạy `/bench`:**
+   - *Nguyên nhân:* Nhân Linux tính hạn mức `RLIMIT_NPROC` trên phạm vi toàn bộ host theo UID thực tế. Trên hạ tầng Render đa người dùng, UID 10001 bị trùng với các tiến trình khác ngoài host khiến tổng số tiến trình của UID này vượt quá 20 ngay khi vừa setrlimit.
+   - *Giải pháp:* Chuyển UID/GID sandbox sang biến môi trường `SANDBOX_UID` với giá trị mặc định `2000000000` (nằm trong dải UID an toàn, không trùng với host). Cập nhật `Dockerfile`, `launcher.c`, `probe.c`, `server.mjs`, `bench.mjs` và `run-suite.mjs` sử dụng biến này.
+   - *Bổ sung `/env-probe`:* Bổ sung trường `sandboxProcessesCount` (đếm qua `/proc` trong container) và kiểm thử fork 5 tiến trình con dưới UID sandbox với NPROC = 20 (`fork_test`) để đảm bảo không bị cạn hạn mức tiến trình.
+
+2. **Lỗi container bị OOM-kill (`oomKilled memoryLimit 512Mi`) khi chạy `/run-suite`:**
+   - *Nguyên nhân:* `RLIMIT_AS` áp dụng riêng cho từng tiến trình con. Khi một ca chạy phân nhánh nhiều tiến trình (như `q8_multi_proc_memory` fork 15 con, mỗi con cấp phát 200 MB), tổng bộ nhớ dirty RSS vượt quá 512 MiB RAM của gói Render free dẫn đến cgroup OOM-kill container.
+   - *Giải pháp:* Đưa vào biến môi trường `SPIKE_MEMORY_BUDGET_MB` (mặc định 384 MB). Runner chủ động đọc `/sys/fs/cgroup/memory.max` và tự động điều chỉnh `memoryLimitBytes` cùng `NPROC` của ca kiểm thử sao cho `NPROC × RLIMIT_AS ≤ budgetBytes` (với ca MLE thuần gán `NPROC=1`).
+   - *Kết quả nghiệm thu:* Bộ ca chạy hoàn hảo 38/38 PASS và không bao giờ vượt ngưỡng 384 MB, an toàn tuyệt đối ngay cả khi chạy với cờ `--memory 512m`.
+
+3. **Cải tiến `bench.mjs` đo lường CPU Throttling:**
+   - Bổ sung hiển thị `nproc`, `os.cpus().length`, đồng thời đo thời gian CPU thực tế (`user_time_ms` + `sys_time_ms`) từ `rusage.json` bên cạnh wall-clock time.
+   - Tính toán tỉ lệ `CPU throttle ratio` = `CPU time / Wall time` (giá trị ~0.15 tương ứng với mức giới hạn 0.15 CPU trên Render free, trong khi môi trường dev cục bộ đạt ~0.95).
+

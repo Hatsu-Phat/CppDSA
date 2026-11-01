@@ -96,9 +96,9 @@ int main(int argc, char *argv[]) {
         if (strcmp(argv[i], "--workdir") == 0 && i + 1 < argc) {
             workdir = argv[++i];
         } else if (strcmp(argv[i], "--uid") == 0 && i + 1 < argc) {
-            target_uid = (uid_t)atoi(argv[++i]);
+            target_uid = (uid_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--gid") == 0 && i + 1 < argc) {
-            target_gid = (gid_t)atoi(argv[++i]);
+            target_gid = (gid_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--tl-sec") == 0 && i + 1 < argc) {
             tl_sec = atol(argv[++i]);
         } else if (strcmp(argv[i], "--ml-bytes") == 0 && i + 1 < argc) {
@@ -122,6 +122,26 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: No command specified after '--'\n");
         print_usage(argv[0]);
         return 1;
+    }
+
+    if (target_uid == 0) {
+        const char *env_uid = getenv("SANDBOX_UID");
+        if (env_uid && *env_uid) {
+            target_uid = (uid_t)strtoul(env_uid, NULL, 10);
+        } else {
+            target_uid = 2000000000;
+        }
+    }
+    if (target_gid == 0) {
+        const char *env_gid = getenv("SANDBOX_GID");
+        if (!env_gid || !*env_gid) {
+            env_gid = getenv("SANDBOX_UID");
+        }
+        if (env_gid && *env_gid) {
+            target_gid = (gid_t)strtoul(env_gid, NULL, 10);
+        } else {
+            target_gid = target_uid;
+        }
     }
 
     g_target_uid = target_uid;

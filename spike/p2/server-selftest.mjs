@@ -139,15 +139,18 @@ async function runSelftest() {
             'cgroupMemoryLimit' in p &&
             typeof p.uid === 'number' &&
             typeof p.gid === 'number' &&
+            typeof p.sandboxProcessesCount === 'number' &&
             p.procStatus && typeof p.procStatus.Seccomp !== 'undefined' &&
             p.procStatus && typeof p.procStatus.NoNewPrivs !== 'undefined' &&
             p.procStatus && typeof p.procStatus.CapEff !== 'undefined' &&
             p.launcherProbe?.setuid?.ok === true &&
             p.launcherProbe?.setrlimit?.ok === true &&
-            p.launcherProbe?.seccomp_load?.ok === true;
+            p.launcherProbe?.seccomp_load?.ok === true &&
+            p.launcherProbe?.fork_test?.ok === true &&
+            p.launcherProbe?.fork_test?.forked === 5;
 
         report('/env-probe đúng → 200 và có các trường trên', probeFieldsOk,
-            `status=${resProbeValid.status}, cpus=${p.cpus}, uid=${p.uid}, seccomp=${p.procStatus?.Seccomp}, setuid_ok=${p.launcherProbe?.setuid?.ok}, setrlimit_ok=${p.launcherProbe?.setrlimit?.ok}, seccomp_load_ok=${p.launcherProbe?.seccomp_load?.ok}`);
+            `status=${resProbeValid.status}, cpus=${p.cpus}, uid=${p.uid}, seccomp=${p.procStatus?.Seccomp}, setuid_ok=${p.launcherProbe?.setuid?.ok}, setrlimit_ok=${p.launcherProbe?.setrlimit?.ok}, seccomp_load_ok=${p.launcherProbe?.seccomp_load?.ok}, fork_test_ok=${p.launcherProbe?.fork_test?.ok}, sandbox_procs=${p.sandboxProcessesCount}`);
 
         // 5. Concurrency check: gọi đồng thời 2 lần → một lần 409
         console.log('\n--- PHẦN 3: Kiểm tra khóa đồng thời và thực thi /run-suite ---');

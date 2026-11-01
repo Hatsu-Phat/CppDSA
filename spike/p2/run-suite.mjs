@@ -15,7 +15,36 @@ process.env.GRADER_SECRET = 'super_fake_secret_xyz123';
 
 const CASES_DIR = '/app/cases';
 const LAUNCHER_PATH = '/usr/local/bin/launcher';
-const SANDBOX_UID = 10001;
+const SANDBOX_UID = parseInt(process.env.SANDBOX_UID || '2000000000', 10);
+const DEFAULT_BUDGET_MB = 384;
+
+function getMemoryBudget() {
+    let budgetMb = parseInt(process.env.SPIKE_MEMORY_BUDGET_MB || String(DEFAULT_BUDGET_MB), 10);
+    if (isNaN(budgetMb) || budgetMb <= 0) budgetMb = DEFAULT_BUDGET_MB;
+    let budgetBytes = budgetMb * 1024 * 1024;
+
+    try {
+        if (fs.existsSync('/sys/fs/cgroup/memory.max')) {
+            const val = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf-8').trim();
+            if (val !== 'max' && /^\d+$/.test(val)) {
+                const cgroupBytes = parseInt(val, 10);
+                if (cgroupBytes < budgetBytes) {
+                    budgetBytes = Math.floor(cgroupBytes * 0.75);
+                }
+            }
+        } else if (fs.existsSync('/sys/fs/cgroup/memory/memory.limit_in_bytes')) {
+            const val = fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf-8').trim();
+            if (/^\d+$/.test(val) && val.length < 18) {
+                const cgroupBytes = parseInt(val, 10);
+                if (cgroupBytes < budgetBytes) {
+                    budgetBytes = Math.floor(cgroupBytes * 0.75);
+                }
+            }
+        }
+    } catch (e) {}
+
+    return budgetBytes;
+}
 
 // Chuẩn hóa output theo docs/REQUIREMENTS.md §4.4
 export function normalizeOutput(text) {
@@ -117,12 +146,13 @@ function cleanStrayFiles() {
 
 // Biên dịch mã nguồn qua launcher sandbox với giới hạn CPU/AS/NPROC/FSIZE và không mạng
 async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = 5000) {
+    const compileBudget = getMemoryBudget();
     const launcherArgs = [
         '--workdir', runDir,
         '--uid', String(SANDBOX_UID),
         '--gid', String(SANDBOX_UID),
         '--tl-sec', String(Math.ceil(compileTimeoutMs / 1000)),
-        '--ml-bytes', '1073741824', // 1 GB
+        '--ml-bytes', String(compileBudget),
         '--fsize-bytes', '52428800',  // 50 MB
         '--nproc', '50',
         '--seccomp',
@@ -213,7 +243,7 @@ async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = 5
 }
 
 // Chạy binary trong sandbox launcher
-async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memoryLimitBytes, fsizeBytes, maxOutputBytes) {
+async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memoryLimitBytes, fsizeBytes, maxOutputBytes, maxProcs = 20) {
     const launcherArgs = [
         '--workdir', runDir,
         '--uid', String(SANDBOX_UID),
@@ -221,7 +251,7 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
         '--tl-sec', String(tlSec),
         '--ml-bytes', String(memoryLimitBytes),
         '--fsize-bytes', String(fsizeBytes),
-        '--nproc', '20',
+        '--nproc', String(maxProcs),
         '--seccomp',
         '--',
         binPath
@@ -371,9 +401,35 @@ async function runTestCase(caseDir) {
     const timeLimitMs = meta.timeLimitMs || 1000;
     const compileTimeoutMs = meta.compileTimeoutMs || 5000;
     const tlSec = Math.ceil(timeLimitMs / 1000);
-    const memoryLimitBytes = meta.memoryLimitBytes || 268435456; // 256 MB default
+    const origMemoryLimitBytes = meta.memoryLimitBytes || 268435456; // 256 MB default
     const maxOutputBytes = meta.maxOutputBytes || 256 * 1024;    // 256 KB default
     const fsizeBytes = meta.fsizeBytes || 5 * 1024 * 1024;       // 5 MB default
+
+    const isMleCase = expectedVerdicts.includes('MLE') && !expectedVerdicts.includes('TLE');
+    let maxProcs = meta.nproc || meta.maxProcs || (isMleCase ? 1 : 20);
+    let memoryLimitBytes = origMemoryLimitBytes;
+
+    const budgetBytes = getMemoryBudget();
+
+    // Điều chỉnh ML / NPROC nếu memoryLimitBytes * maxProcs > budgetBytes
+    if (memoryLimitBytes * maxProcs > budgetBytes) {
+        const origProcs = maxProcs;
+        const origMlMb = Math.round(origMemoryLimitBytes / (1024 * 1024));
+        const budgetMb = Math.round(budgetBytes / (1024 * 1024));
+
+        if (isMleCase) {
+            maxProcs = 1;
+            if (memoryLimitBytes > budgetBytes) {
+                memoryLimitBytes = budgetBytes;
+            }
+        } else {
+            maxProcs = Math.min(maxProcs, 4);
+            memoryLimitBytes = Math.min(origMemoryLimitBytes, Math.floor(budgetBytes / maxProcs));
+        }
+
+        const adjMlMb = Math.round(memoryLimitBytes / (1024 * 1024));
+        console.log(`[BUDGET] ${id}: vượt budget ${budgetMb}MB (${origProcs} procs * ${origMlMb}MB = ${origProcs * origMlMb}MB) -> giảm ML: ${origMlMb}MB -> ${adjMlMb}MB, NPROC: ${origProcs} -> ${maxProcs} (tổng: ${Math.round(maxProcs * memoryLimitBytes / (1024*1024))}MB <= ${budgetMb}MB)`);
+    }
 
     // Trước khi chạy, dọn sạch tiến trình sandbox và file tồn dư
     killAllSandboxProcesses();
@@ -512,7 +568,8 @@ async function runTestCase(caseDir) {
         timeLimitMs,
         memoryLimitBytes,
         fsizeBytes,
-        maxOutputBytes
+        maxOutputBytes,
+        maxProcs
     );
 
     // 3. Phân loại Verdict
