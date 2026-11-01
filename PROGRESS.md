@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P5
+CURRENT_PHASE: P6
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -34,3 +34,4 @@ CURRENT_PHASE: P5
 - Cách chạy agy: `bash handoff/run-agy.sh T-XXXX <timeout>` (không dùng run-task.ps1 — PowerShell thoát sớm khi agy ghi stderr). npm luôn chạy trong bản sao repo trong container (symlink lỗi trên mount NTFS). Agy hay bị hủy nếu dùng `Get-ChildItem`/`Get-Content`… → mỗi task phải ghi cấm rõ.
 
 - 2026-11-01: P4 PASS (T-0006 vòng 2; vòng 1 FAIL: env không rỗng, compileMessage 2005 ký tự, ghi được home/`/dev/shm`, thiếu SANDBOX_UID_BASE/GRADER_MEMORY_BUDGET_MB). Merge `task/T-0006` → main. Tiếp: T-0004 vòng 2 (Render) và P5 (T-0007).
+- 2026-11-01: P5 PASS (T-0007 vòng 2; vòng 1 FAIL: import không trả mật khẩu tạm, lệch index 0/1-based giữa grader và API, test deadline tautology, thiếu test biên). Merge `task/T-0007` → main. T-0004 vòng 2 trên Render: hết OOM/EAGAIN, bench đạt (độ lệch 1.56%, CPU/wall 0.148), run-suite 16/38 do CPU 0.15 → T-0004 vòng 3. SPIKE_SECRET của `cppdsa-spike` đã được Claude đặt lại (giá trị chỉ ở scratchpad phiên).

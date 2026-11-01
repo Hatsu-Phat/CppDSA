@@ -81,6 +81,7 @@ export interface JudgeJob {
 }
 
 export interface TestResult {
+  /** 0-based index corresponding to the index in JudgeJob.hiddenTests (0, 1, 2, ...) */
   index: number;
   verdict: JudgeVerdict;
   timeMs: number;
