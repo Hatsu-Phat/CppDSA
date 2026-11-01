@@ -149,3 +149,35 @@
 - Tiêu chí P3: (1) một lệnh khởi động toàn bộ ✔; (2) health 200 ✔; (3) build+lint+test pass từ clone sạch, mỗi phần ≥ 1 test ✔; làm lại theo DEV_SETUP ✔. CI trên GitHub: kiểm sau khi push.
 - Kết luận: PASS.
 
+### T-0004 vòng 1 — spike trên Render free thật — 2026-11-01
+- Local (Claude chạy lại, nhánh task/T-0004 commit 48231d0): `docker build` OK; `run-suite.mjs` 38/38; `server-selftest.mjs` 8/8 (health; 401 thiếu/sai secret; 503 khi không đặt secret; 409 khi chạy đồng thời; run-suite failed=0; bench exit 0); secret so sánh `timingSafeEqual`, không endpoint nào nhận code/lệnh từ client.
+- Render (service `cppdsa-spike`, srv-dbj88mh42hec73c9nbug, free, singapore, nhánh task/T-0004; tạo qua phiên deploy-helper):
+  - `/env-probe`: kernel 6.8.0-1057-aws; uid 0; CapEff 0x400cb; NoNewPrivs=1; Seccomp=0 (chưa filter); cgroup memory.max 536870912 (512 MiB); `setuid`/`setrlimit`/`seccomp_load` trong launcher: ok cả ba. Metrics Render: cpu_limit 0.15 CPU.
+  - `/health` (service đang thức): 305 ms, sau đó 0.13–0.29 s.
+  - `/run-suite`: kết nối đứt; Render event `server_failed` 00:18:18Z `oomKilled memoryLimit 512Mi`, tự restart 00:18:22Z → bộ ca đa tiến trình/MLE làm OOM cả container.
+  - `/bench`: exitCode 1, `execve failed: Resource temporarily unavailable` (status 127) ngay lần 1 → RLIMIT_NPROC của uid sandbox 10001 trên Render bị vượt ngay (số tiến trình theo uid có thể tính chung ngoài container) [CẦN XÁC MINH nguyên nhân chính xác].
+- Đánh giá tiêu chí P2: 5 (không privileged trên Render) ✔ — sandbox áp dụng được setuid/rlimit/seccomp; 6 (giới hạn tài nguyên chấp nhận được) ✘ hiện tại — OOM container và NPROC; 7 (bench 10 lần + cold start) CHƯA — bench không chạy được.
+- Kết luận: FAIL → T-0004 vòng 2 (uid sandbox cấu hình được dải cao; ngân sách bộ nhớ để không OOM container; đo lại bench + cold start). Đã chuyển các ràng buộc sang thiết kế P4 (T-0006). Lưu ý TL: 0.15 CPU → thời gian chạy trên Render có thể chậm hơn local nhiều lần; cần số đo bench.
+- Cold start Render (2026-11-01, sau > 15 phút không có request): `GET /health` 200 sau 13.37 s; request kế tiếp `uptimeMs` 12672, 0.18 s → instance vừa được đánh thức. Tiêu chí 7 (cold start) ✔ đo được; bench còn chờ T-0004 vòng 2.
+
+### T-0006 vòng 1 / Phase P4 — nghiệm thu (accept-phase) — 2026-11-01
+- Claude chạy lại (nhánh task/T-0006, commit 988cb6d; Docker 29.8.1):
+  - Lệnh 1 (npm ci/lint/format/build/test trong node:22-bookworm): exit 0; shared 25 test, api 2, grader 5, web 2 pass. (Lần chạy đầu với `npm ci >/dev/null` exit 1, log trống; chạy lại không chặn output thì exit 0 — chưa tái hiện được.)
+  - Lệnh 2 `docker build`: exit 0. Lệnh 3 `test:grading`: exit 0, `Summary: 44/44 cases PASSED` (41 ca + đồng thời 20 job + recovery có SIGKILL + leak-check). Chạy lại với `--memory 512m`: 44/44.
+  - Lệnh 4 compose: grader `Up (healthy)`, db healthy; `down -v` exit 0.
+- Probe độc lập (scratchpad/probe.mjs, probe2.mjs; grader container `--memory 512m`, gửi job qua HTTP thật):
+  - ✔ Quét toàn bộ FS (trừ /proc/self,/sys,/dev) tìm expected ẩn của chính job và job song song: không tìm thấy (WA).
+  - ✔ Callback không chứa input/expected/actual; log grader không chứa marker (0 dòng).
+  - ✘ Env tiến trình sinh viên KHÔNG rỗng: có `PATH`, `HOME`, `LANG`, ≥ 3 biến (tiêu chí 8).
+  - ✘ `compileMessage` dài 2005 ký tự (> 2000) với 300 lỗi undefined symbol (tiêu chí 6). Không lộ đường dẫn/secret ✔.
+  - ✘ Code sinh viên ghi được `/home/sandbox10001/` (home của uid sandbox, tồn tại qua các job, uid được tái dùng) và `/dev/shm` → kênh lưu dữ liệu giữa các submission/đầy đĩa. `/tmp`, `/var/tmp`, `../`, `/run/lock` bị chặn ✔.
+  - ✘ Phần BỔ SUNG từ số đo Render chưa làm: không có `SANDBOX_UID_BASE` (uid vẫn 10001..10008 — đúng uid gây EAGAIN trên Render) và không có `GRADER_MEMORY_BUDGET_MB`; 2 job ML 256 gửi cùng lúc kết thúc cách nhau 2 ms (chạy song song, kỳ vọng tuần tự).
+- Tiêu chí P4: (1) bộ chuẩn ≥30 ca đúng 100% ✔; (2) test công khai không trong job ✔ (hợp đồng không có trường); (3) không lộ test ẩn ✔; (4) grader chết không kẹt ✔ (recovery SIGKILL); (5) 20 đồng thời không lẫn ✔; (6) ✘ 2005 ký tự; (7) gian lận không AC ✔ (11 ca + probe); (8) ✘ env không rỗng (credential DB: grader không đọc DATABASE_URL ✔).
+- Kết luận: FAIL → T-0006 vòng 2.
+
+### T-0006 vòng 2 / Phase P4 — nghiệm thu lại — 2026-11-01
+- Claude chạy lại: lệnh 1 exit 0 (shared 25, api 2, grader 6, web 2 test); lệnh 2 build exit 0; lệnh 3 `Summary: 50/50 cases PASSED` (thêm TC-42..45, TC-UID-BASE, TC-MEM-BUDGET); lệnh 3b `--memory 512m` 50/50; lệnh 4 compose: grader/db healthy, down exit 0.
+- Probe độc lập (container `--memory 512m`): quét FS tìm expected ẩn của job mình + job song song → không thấy ✔; env sinh viên 0 biến (PATH/HOME không có) ✔; `compileMessage` 300 lỗi → đúng 2000 ký tự, không đường dẫn/secret ✔; callback không chứa input/expected/actual ✔; ghi `/home/*/x`, `/dev/shm`, `/tmp`, `/var/tmp`, `../`, `/run/lock`, `/home` → đều bị chặn ✔; `getuid()` ≥ 2000000000 ✔; 2 job ML 256 với budget 400 kết thúc cách nhau 2528 ms (tuần tự) ✔; job ML > budget → 400 (app.ts) ✔.
+- Tiêu chí P4 1–8: ✔ cả 8.
+- Ghi chú: agy không cập nhật `handoff/reports/T-0006.md` cho vòng 2 (vẫn nội dung vòng 1) — lỗi quy trình, không ảnh hưởng sản phẩm; kết quả trên do Claude tự chạy. `/dev/shm` được chặn bằng `chmod 755` trong entrypoint (cần container chạy root — đúng trên Render theo env-probe).
+- Kết luận: PASS.

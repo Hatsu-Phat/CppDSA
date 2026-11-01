@@ -27,3 +27,4 @@ handoff/reports/*.run.json
 Thumbs.db
 .vscode/
 .idea/
+handoff/reports/*.agy-stderr.txt
