@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P4
+CURRENT_PHASE: P5
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -33,3 +33,4 @@ CURRENT_PHASE: P4
 - Sau đó: P5 → P8 tự động; dừng trước P9.
 - Cách chạy agy: `bash handoff/run-agy.sh T-XXXX <timeout>` (không dùng run-task.ps1 — PowerShell thoát sớm khi agy ghi stderr). npm luôn chạy trong bản sao repo trong container (symlink lỗi trên mount NTFS). Agy hay bị hủy nếu dùng `Get-ChildItem`/`Get-Content`… → mỗi task phải ghi cấm rõ.
 
+- 2026-11-01: P4 PASS (T-0006 vòng 2; vòng 1 FAIL: env không rỗng, compileMessage 2005 ký tự, ghi được home/`/dev/shm`, thiếu SANDBOX_UID_BASE/GRADER_MEMORY_BUDGET_MB). Merge `task/T-0006` → main. Tiếp: T-0004 vòng 2 (Render) và P5 (T-0007).

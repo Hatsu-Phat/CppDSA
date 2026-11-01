@@ -3,6 +3,8 @@ import { testCases } from './cases.mjs';
 import { runConcurrencyTest } from './concurrency.mjs';
 import { runCrashRecoveryTest } from './recovery.mjs';
 import { runLeakCheckTest } from './leak-check.mjs';
+import { runUidBaseTest } from './uid-base.mjs';
+import { runMemoryBudgetTest } from './mem-budget.mjs';
 import { buildGraderApp } from '../../src/grader/dist/app.js';
 
 const GRADER_PORT = 4150;
@@ -146,8 +148,14 @@ async function main() {
             if (tc.expected.score !== undefined) {
               scoreMatch = Math.abs(Number(result.score) - Number(tc.expected.score)) < 0.01;
             }
+            let lengthMatch = true;
+            if (tc.expected.maxCompileMessageLength !== undefined) {
+              lengthMatch =
+                typeof result.compileMessage === 'string' &&
+                result.compileMessage.length <= tc.expected.maxCompileMessageLength;
+            }
 
-            pass = verdictMatch && scoreMatch;
+            pass = verdictMatch && scoreMatch && lengthMatch;
           }
         }
       } catch (err) {
@@ -223,6 +231,44 @@ async function main() {
     thucTe: leakRes.pass ? '0 LEAK' : 'LEAK',
     diem: '1.00',
     ketQua: leakRes.pass ? 'PASS' : 'FAIL',
+  });
+
+  // 6. Custom Sandbox UID Base Test (1500000000)
+  console.log('Running custom sandbox UID base test...');
+  const uidRes = await runUidBaseTest({
+    callbackBaseUrl: CALLBACK_BASE_URL,
+    registerCallbackWaiter,
+  });
+  if (!uidRes.pass) {
+    allPassed = false;
+    console.error('UID base test failure:', uidRes.details);
+  }
+  tableRows.push({
+    ca: 'TC-UID-BASE',
+    mode: 'isolation',
+    kyVong: 'UID in range',
+    thucTe: uidRes.pass ? 'UID in range' : 'FAIL',
+    diem: '1.00',
+    ketQua: uidRes.pass ? 'PASS' : 'FAIL',
+  });
+
+  // 7. Memory Budget Concurrency Test (budget 400: ML 256 sequential vs ML 64 parallel)
+  console.log('Running memory budget concurrency test...');
+  const budgetRes = await runMemoryBudgetTest({
+    callbackBaseUrl: CALLBACK_BASE_URL,
+    registerCallbackWaiter,
+  });
+  if (!budgetRes.pass) {
+    allPassed = false;
+    console.error('Memory budget test failure:', budgetRes.details);
+  }
+  tableRows.push({
+    ca: 'TC-MEM-BUDGET',
+    mode: 'concurrency',
+    kyVong: 'Seq+Par OK',
+    thucTe: budgetRes.pass ? 'Seq+Par OK' : 'FAIL',
+    diem: '1.00',
+    ketQua: budgetRes.pass ? 'PASS' : 'FAIL',
   });
 
   // Clean up servers

@@ -11,12 +11,13 @@ interface QueuedItem {
 export class JobQueue {
   private queue: QueuedItem[] = [];
   private activeCount = 0;
+  private activeMemoryMb = 0;
   private uidPool: UidPool;
   private config: GraderConfig;
 
   constructor(config: GraderConfig, uidPool?: UidPool) {
     this.config = config;
-    this.uidPool = uidPool || new UidPool(config.sandboxUidStart, config.sandboxUidCount);
+    this.uidPool = uidPool || new UidPool(config.sandboxUidBase, config.sandboxUidCount);
   }
 
   public enqueue(job: JudgeJob): void {
@@ -27,31 +28,49 @@ export class JobQueue {
     this.processNext();
   }
 
-  public getStats(): { queueLength: number; activeJobs: number } {
+  public getStats(): {
+    queueLength: number;
+    activeJobs: number;
+    activeMemoryMb: number;
+    memoryBudgetMb: number;
+  } {
     return {
       queueLength: this.queue.length,
       activeJobs: this.activeCount,
+      activeMemoryMb: this.activeMemoryMb,
+      memoryBudgetMb: this.config.memoryBudgetMb,
     };
   }
 
   private async processNext(): Promise<void> {
-    if (this.activeCount >= this.config.concurrency || this.queue.length === 0) {
+    if (this.queue.length === 0) {
       return;
     }
 
-    const item = this.queue.shift();
-    if (!item) return;
+    if (this.activeCount >= this.config.concurrency) {
+      return;
+    }
 
+    const nextItem = this.queue[0];
+    const jobMem = nextItem.job.memoryLimitMb;
+
+    if (this.activeCount > 0 && this.activeMemoryMb + jobMem > this.config.memoryBudgetMb) {
+      // Exceeds memory budget while jobs are active; wait for in-flight jobs to finish
+      return;
+    }
+
+    this.queue.shift();
     this.activeCount++;
+    this.activeMemoryMb += jobMem;
 
     // Execute job asynchronously
     (async () => {
       let result: JudgeResult;
       try {
-        result = await executeJob(item.job, this.uidPool, this.config);
+        result = await executeJob(nextItem.job, this.uidPool, this.config);
       } catch (err: any) {
         result = {
-          submissionId: item.job.submissionId,
+          submissionId: nextItem.job.submissionId,
           status: 'SYSTEM_ERROR',
           verdict: 'SE',
           score: 0,
@@ -61,9 +80,10 @@ export class JobQueue {
       }
 
       // Send callback
-      await this.sendCallbackWithRetry(item.job.callbackUrl, result);
+      await this.sendCallbackWithRetry(nextItem.job.callbackUrl, result);
 
       this.activeCount--;
+      this.activeMemoryMb -= jobMem;
       this.processNext();
     })();
   }

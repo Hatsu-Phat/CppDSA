@@ -73,6 +73,7 @@ export async function runTest(
     cwd: runDir,
     detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
+    env: {},
   });
 
   let killFallbackTimer: NodeJS.Timeout | null = null;

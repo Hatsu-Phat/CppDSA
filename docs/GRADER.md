@@ -1,6 +1,6 @@
 # Đặc tả Dịch vụ Chấm bài (Grader Service Specification)
 
-Tài liệu đặc tả hợp đồng dữ liệu, cơ chế sandbox, hàng đợi và bảo mật của dịch vụ chấm bài `src/grader` trong hệ thống CppDSA.
+Tài liệu đặc tả hợp đồng dữ liệu, cơ chế sandbox, hàng đợi, phân bổ tài nguyên và bảo mật của dịch vụ chấm bài `src/grader` trong hệ thống CppDSA.
 
 ---
 
@@ -66,7 +66,7 @@ export interface JudgeResult {
 ```
 
 - **Quy tắc tuyệt đối:** Kết quả `JudgeResult` và mảng `tests` **KHÔNG** chứa `input`, `expected`, `actual` (output thực tế) hoặc đường dẫn file hệ thống.
-- `compileMessage`: Giới hạn tối đa 2000 ký tự, loại bỏ các đường dẫn thư mục tạm (`/tmp/run_*`), thay bằng tên logic (`solution.cpp`, `template.cpp`), loại bỏ mọi chuỗi bí mật/secret.
+- `compileMessage`: Giới hạn tối đa 2000 ký tự (tính cả hậu tố thông báo rút gọn `\n...[TRUNCATED]`), loại bỏ các đường dẫn thư mục tạm (`/tmp/run_*`), thay bằng tên logic (`solution.cpp`, `template.cpp`), loại bỏ mọi chuỗi bí mật/secret.
 - `verdict` tổng: `CE` nếu biên dịch lỗi; `AC` nếu tất cả hidden tests đạt `AC`; ngược lại lấy verdict của test thất bại đầu tiên.
 - `score`: `(số test AC) / (tổng số test)` làm tròn 4 chữ số thập phân (e.g. `1.00`, `0.6667`, `0.00`).
 
@@ -116,7 +116,7 @@ export interface JudgeResult {
 
 ## 3. Cơ chế Sandbox và Cách ly An ninh (Sandbox Isolation)
 
-Kế thừa trực tiếp các biện pháp an ninh đã kiểm chứng độc lập tại Spike P2:
+Kế thừa trực tiếp các biện pháp an ninh đã kiểm chứng độc lập tại Spike P2 và bổ sung thích ứng Render:
 
 1. **Launcher C chuyên dụng (`/usr/local/bin/launcher`):**
    - Biên dịch bằng `gcc -O2` liên kết `libseccomp`.
@@ -127,29 +127,40 @@ Kế thừa trực tiếp các biện pháp an ninh đã kiểm chứng độc l
    - Chặn toàn bộ syscall mạng (`socket`, `connect`, `bind`, `listen`, `accept`, `sendto`, `recvfrom`, `sendmsg`, `recvmsg`, `sendmmsg`, `recvmmsg`) với mã lỗi `EPERM`.
 3. **Giới hạn tài nguyên phần cứng (Resource Limits via `rlimit`):**
    - `RLIMIT_CPU`: Giới hạn thời gian CPU (dừng bằng SIGXCPU).
-   - `RLIMIT_AS` & `RLIMIT_DATA`: Giới hạn không gian bộ nhớ (mặc định 256 MB hoặc theo job).
+   - `RLIMIT_AS` & `RLIMIT_DATA`: Giới hạn không gian bộ nhớ theo `memoryLimitMb` của job.
    - `RLIMIT_FSIZE`: Giới hạn kích thước file tạo ra (50 MB khi compile, 10 MB khi run).
    - `RLIMIT_NPROC`: Giới hạn tối đa tiến trình (20 tiến trình khi chạy, 50 khi biên dịch) chặn triệt để fork bomb.
    - `RLIMIT_CORE`: Tắt core dump (0 bytes).
-4. **Môi trường thực thi rỗng (Clean Environment):**
-   - Biến môi trường của tiến trình sinh viên chỉ gồm `PATH`, `HOME`, `TMPDIR`, `LANG`.
-   - Tuyệt đối không truyền `GRADER_SECRET` hay credential hệ thống vào tiến trình sinh viên.
+4. **Môi trường thực thi rỗng (Strict Clean Environment):**
+   - Khi chạy code sinh viên: Môi trường hoàn toàn rỗng (`char *clean_env[] = { NULL }` / `environ` rỗng 0 biến).
+   - Khi biên dịch bằng `g++`: Chỉ cung cấp duy nhất biến `PATH=/usr/bin:/bin` (`--compiler-env`).
+   - Tuyệt đối không truyền `GRADER_SECRET` hay credential hệ thống vào bất kỳ tiến trình nào.
    - Grader không đọc hay giữ `DATABASE_URL`.
-5. **Cách ly thư mục và Pool UID:**
-   - Mỗi job được cấp phát một UID riêng biệt từ pool (`10001` đến `10008`).
-   - Mỗi job chạy trong thư mục tạm độc lập `/tmp/run_<submissionId>_<timestamp>` với quyền `0700` thuộc sở hữu của UID đó.
-   - Thư mục ứng dụng `/app` được thiết lập quyền `0700` thuộc sở hữu `root:root`. Người dùng sandbox hoàn toàn không thể đọc thư mục `/app` hay file hệ thống nhạy cảm.
-   - Sau mỗi test case và khi kết thúc job: Grader quét `/proc` và gửi `SIGKILL` tiêu diệt toàn bộ tiến trình thuộc UID của job đó, sau đó xóa sạch thư mục tạm.
+5. **Cách ly thư mục và Khóa thư mục ghi được (Filesystem Hardening):**
+   - Người dùng sandbox được tạo với `useradd -M -d /nonexistent -s /usr/sbin/nologin` (hoàn toàn không có thư mục home).
+   - Thư mục ứng dụng `/app` được thiết lập quyền `0700` thuộc sở hữu `root:root`.
+   - Thư mục `/dev/shm`, `/tmp`, `/var/tmp` được khóa quyền `0755` thuộc sở hữu `root:root` ngay từ entrypoint container và lúc khởi động executor, ngăn code sinh viên ghi vào `/home`, `/dev/shm`, `/tmp`, `/var/tmp` hoặc `../`.
+   - Mỗi job chỉ được phép ghi trong thư mục riêng `/tmp/run_<submissionId>_<timestamp>` (quyền `0700`).
+   - Sau mỗi test case và khi kết thúc job: Grader quét `/proc` diệt toàn bộ tiến trình thuộc UID của job đó, quét sạch file của UID sandbox trong các thư mục dùng chung, và xóa sạch thư mục chạy.
+6. **UID Sandbox Dải Cao (`SANDBOX_UID_BASE`):**
+   - Trên nền tảng container Render (kernel cgroup chung), UID nhỏ (như 10001) dễ bị chạm giới hạn RLIMIT_NPROC bên ngoài container gây lỗi `EAGAIN`.
+   - Grader sử dụng dải UID cao cấu hình qua `SANDBOX_UID_BASE` (mặc định `2000000000`, pool 8–16 UIDs), có thể cấu hình linh hoạt qua biến môi trường.
 
 ---
 
-## 4. Hàng đợi In-Memory và Xử lý Đồng thời
+## 4. Hàng đợi In-Memory và Ngân sách Bộ nhớ (`GRADER_MEMORY_BUDGET_MB`)
 
 - Quản lý hàng đợi bộ nhớ trong tiến trình Node.js:
   - Giới hạn xử lý song song bằng cấu hình `GRADER_CONCURRENCY` (mặc định 2).
-  - Khi số job đang chạy đạt giới hạn, các job mới được giữ an toàn trong hàng đợi.
+  - Quản lý ngân sách bộ nhớ container bằng `GRADER_MEMORY_BUDGET_MB` (mặc định 400 MB).
+- **Quy tắc phân bổ và điều phối ngân sách:**
+  1. Nếu bài nộp yêu cầu `memoryLimitMb > GRADER_MEMORY_BUDGET_MB` → Trả về **HTTP 400 Bad Request** ngay lập tức.
+  2. Hàng đợi theo dõi tổng bộ nhớ của các job đang chạy (`activeMemoryMb`). Khi chuẩn bị dispatch job tiếp theo:
+     - Nếu `activeCount >= GRADER_CONCURRENCY`: Chờ.
+     - Nếu `activeCount > 0` và `activeMemoryMb + nextJob.memoryLimitMb > GRADER_MEMORY_BUDGET_MB`: Giữ job trong hàng đợi chờ các job đang chạy hoàn tất (tránh OOM container).
+     - Ví dụ: Với budget 400MB và 2 job `memoryLimitMb: 256MB` gửi cùng lúc, job 1 chạy trước, job 2 phải chờ job 1 kết thúc (chạy tuần tự). Trong khi đó, 2 job `memoryLimitMb: 64MB` sẽ chạy song song theo `GRADER_CONCURRENCY`.
 - Đo lường và giám sát:
-  - `GET /health` trả về `200 OK` kèm `{ status: "ok", queueLength: number, activeJobs: number }`.
+  - `GET /health` trả về `200 OK` kèm `{ status: "ok", queueLength, activeJobs, activeMemoryMb, memoryBudgetMb }`.
 - Callback HTTP có cơ chế thử lại (Retry with Backoff):
   - Khi hoàn thành chấm, grader gửi kết quả về `callbackUrl` kèm header `X-Grader-Secret`.
   - Tự động thử lại tối đa 3 lần với exponential backoff nếu mạng hoặc server tạm thời lỗi.
@@ -175,7 +186,8 @@ Hàm thuần `decideRecovery(submission, now)` trong `@cppdsa/shared` thực hi�
 | `HOST` | `0.0.0.0` | Địa chỉ IP bind dịch vụ |
 | `GRADER_SECRET` | *(Bắt buộc)* | Secret token dùng xác thực HTTP giữa API và Grader |
 | `GRADER_CONCURRENCY`| `2` | Số lượng job chấm đồng thời tối đa |
-| `SANDBOX_UID_START` | `10001` | UID khởi đầu cho pool sandbox |
+| `GRADER_MEMORY_BUDGET_MB` | `400` | Ngân sách bộ nhớ tối đa cho các job đồng thời (MB) |
+| `SANDBOX_UID_BASE` | `2000000000` | UID khởi đầu cho pool sandbox dải cao |
 | `SANDBOX_UID_COUNT` | `8` | Số lượng UID trong pool |
 | `LAUNCHER_PATH` | `/usr/local/bin/launcher` | Đường dẫn file thực thi sandbox launcher |
 | `COMPILE_TIMEOUT_MS`| `10000` | Hạn chót tối đa cho một lần biên dịch g++ (ms) |

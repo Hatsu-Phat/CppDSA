@@ -74,6 +74,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --nproc <max_procs>\n");
     fprintf(stderr, "  --nofile <max_files>\n");
     fprintf(stderr, "  --seccomp\n");
+    fprintf(stderr, "  --compiler-env\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -86,6 +87,7 @@ int main(int argc, char *argv[]) {
     int nproc = 0;
     int nofile = 128;
     int use_seccomp = 0;
+    int is_compiler = 0;
     int cmd_index = -1;
 
     for (int i = 1; i < argc; ++i) {
@@ -96,9 +98,9 @@ int main(int argc, char *argv[]) {
         if (strcmp(argv[i], "--workdir") == 0 && i + 1 < argc) {
             workdir = argv[++i];
         } else if (strcmp(argv[i], "--uid") == 0 && i + 1 < argc) {
-            target_uid = (uid_t)atoi(argv[++i]);
+            target_uid = (uid_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--gid") == 0 && i + 1 < argc) {
-            target_gid = (gid_t)atoi(argv[++i]);
+            target_gid = (gid_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--tl-sec") == 0 && i + 1 < argc) {
             tl_sec = atol(argv[++i]);
         } else if (strcmp(argv[i], "--ml-bytes") == 0 && i + 1 < argc) {
@@ -111,6 +113,8 @@ int main(int argc, char *argv[]) {
             nofile = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--seccomp") == 0) {
             use_seccomp = 1;
+        } else if (strcmp(argv[i], "--compiler-env") == 0) {
+            is_compiler = 1;
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -133,6 +137,11 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
+
+    // Ensure temporary and shared memory locations are not world-writable
+    chmod("/dev/shm", 0755);
+    chmod("/tmp", 0755);
+    chmod("/var/tmp", 0755);
 
     // Register as subreaper so all orphan processes in child tree reparent here
     prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
@@ -257,21 +266,19 @@ int main(int argc, char *argv[]) {
             seccomp_release(ctx);
         }
 
-        // Clean environment: student process runs with empty/minimal env
-        char tmpdir_env[512];
-        char home_env[512];
-        snprintf(tmpdir_env, sizeof(tmpdir_env), "TMPDIR=%s", workdir ? workdir : "/tmp");
-        snprintf(home_env, sizeof(home_env), "HOME=%s", workdir ? workdir : "/tmp");
-
-        char *clean_env[] = {
-            "PATH=/usr/local/bin:/usr/bin:/bin",
-            home_env,
-            tmpdir_env,
-            "LANG=C.UTF-8",
-            NULL
-        };
-
-        execve(argv[cmd_index], &argv[cmd_index], clean_env);
+        // Environment: compiler gets minimal PATH, student process runs with strictly empty env
+        if (is_compiler) {
+            char *compiler_env[] = {
+                "PATH=/usr/bin:/bin",
+                NULL
+            };
+            execve(argv[cmd_index], &argv[cmd_index], compiler_env);
+        } else {
+            char *clean_env[] = {
+                NULL
+            };
+            execve(argv[cmd_index], &argv[cmd_index], clean_env);
+        }
         perror("execve failed");
         exit(127);
     }

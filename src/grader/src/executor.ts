@@ -22,6 +22,15 @@ export async function executeJob(
   const runDir = `/tmp/run_${job.submissionId}_${Date.now()}`;
 
   try {
+    // 0. Ensure system temporary directories are not world-writable
+    try {
+      fs.chmodSync('/dev/shm', 0o755);
+      fs.chmodSync('/tmp', 0o755);
+      fs.chmodSync('/var/tmp', 0o755);
+    } catch {
+      // Ignore
+    }
+
     // 1. Prepare run directory
     if (fs.existsSync(runDir)) {
       fs.rmSync(runDir, { recursive: true, force: true });

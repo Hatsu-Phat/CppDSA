@@ -174,3 +174,10 @@
   - ✘ Phần BỔ SUNG từ số đo Render chưa làm: không có `SANDBOX_UID_BASE` (uid vẫn 10001..10008 — đúng uid gây EAGAIN trên Render) và không có `GRADER_MEMORY_BUDGET_MB`; 2 job ML 256 gửi cùng lúc kết thúc cách nhau 2 ms (chạy song song, kỳ vọng tuần tự).
 - Tiêu chí P4: (1) bộ chuẩn ≥30 ca đúng 100% ✔; (2) test công khai không trong job ✔ (hợp đồng không có trường); (3) không lộ test ẩn ✔; (4) grader chết không kẹt ✔ (recovery SIGKILL); (5) 20 đồng thời không lẫn ✔; (6) ✘ 2005 ký tự; (7) gian lận không AC ✔ (11 ca + probe); (8) ✘ env không rỗng (credential DB: grader không đọc DATABASE_URL ✔).
 - Kết luận: FAIL → T-0006 vòng 2.
+
+### T-0006 vòng 2 / Phase P4 — nghiệm thu lại — 2026-11-01
+- Claude chạy lại: lệnh 1 exit 0 (shared 25, api 2, grader 6, web 2 test); lệnh 2 build exit 0; lệnh 3 `Summary: 50/50 cases PASSED` (thêm TC-42..45, TC-UID-BASE, TC-MEM-BUDGET); lệnh 3b `--memory 512m` 50/50; lệnh 4 compose: grader/db healthy, down exit 0.
+- Probe độc lập (container `--memory 512m`): quét FS tìm expected ẩn của job mình + job song song → không thấy ✔; env sinh viên 0 biến (PATH/HOME không có) ✔; `compileMessage` 300 lỗi → đúng 2000 ký tự, không đường dẫn/secret ✔; callback không chứa input/expected/actual ✔; ghi `/home/*/x`, `/dev/shm`, `/tmp`, `/var/tmp`, `../`, `/run/lock`, `/home` → đều bị chặn ✔; `getuid()` ≥ 2000000000 ✔; 2 job ML 256 với budget 400 kết thúc cách nhau 2528 ms (tuần tự) ✔; job ML > budget → 400 (app.ts) ✔.
+- Tiêu chí P4 1–8: ✔ cả 8.
+- Ghi chú: agy không cập nhật `handoff/reports/T-0006.md` cho vòng 2 (vẫn nội dung vòng 1) — lỗi quy trình, không ảnh hưởng sản phẩm; kết quả trên do Claude tự chạy. `/dev/shm` được chặn bằng `chmod 755` trong entrypoint (cần container chạy root — đúng trên Render theo env-probe).
+- Kết luận: PASS.

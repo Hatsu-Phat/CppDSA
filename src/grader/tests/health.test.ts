@@ -101,4 +101,32 @@ describe('Grader HTTP endpoints', () => {
       submissionId: 'sub-valid-1',
     });
   });
+
+  it('POST /jobs returns 400 if memoryLimitMb exceeds memoryBudgetMb', async () => {
+    const app = buildGraderApp({ graderSecret: secret, memoryBudgetMb: 300 });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/jobs',
+      headers: {
+        'x-grader-secret': secret,
+      },
+      payload: {
+        submissionId: 'sub-mem-exceed',
+        mode: 'template',
+        language: 'cpp17',
+        timeLimitMs: 1000,
+        memoryLimitMb: 400,
+        compare: 'trim-trailing',
+        template: {
+          source: '// STUDENT_BEGIN s\nint s();\n// STUDENT_END\nint main(){return 0;}',
+          regions: { s: 'int s(){return 0;}' },
+        },
+        hiddenTests: [{ id: '1', input: '1', expected: '1' }],
+        callbackUrl: 'http://localhost/callback',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('exceeds grader memory budget');
+  });
 });

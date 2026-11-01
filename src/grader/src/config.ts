@@ -3,6 +3,8 @@ export interface GraderConfig {
   host: string;
   graderSecret: string;
   concurrency: number;
+  memoryBudgetMb: number;
+  sandboxUidBase: number;
   sandboxUidStart: number;
   sandboxUidCount: number;
   launcherPath: string;
@@ -15,7 +17,10 @@ export function loadConfig(): GraderConfig {
   const host = process.env.HOST || process.env.GRADER_HOST || '0.0.0.0';
   const graderSecret = process.env.GRADER_SECRET || '';
   const concurrency = Math.max(1, Number(process.env.GRADER_CONCURRENCY || 2));
-  const sandboxUidStart = Number(process.env.SANDBOX_UID_START || 10001);
+  const memoryBudgetMb = Math.max(1, Number(process.env.GRADER_MEMORY_BUDGET_MB || 400));
+  const sandboxUidBase = Number(
+    process.env.SANDBOX_UID_BASE || process.env.SANDBOX_UID_START || 2000000000
+  );
   const sandboxUidCount = Number(process.env.SANDBOX_UID_COUNT || 8);
   const launcherPath = process.env.LAUNCHER_PATH || '/usr/local/bin/launcher';
   const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT_MS || 10000);
@@ -26,7 +31,9 @@ export function loadConfig(): GraderConfig {
     host,
     graderSecret,
     concurrency,
-    sandboxUidStart,
+    memoryBudgetMb,
+    sandboxUidBase,
+    sandboxUidStart: sandboxUidBase,
     sandboxUidCount,
     launcherPath,
     compileTimeoutMs,

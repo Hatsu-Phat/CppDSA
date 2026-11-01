@@ -1028,4 +1028,145 @@ int main() { solve(); return 0; }
     },
     expected: { verdict: ['RE', 'WA', 'TLE'], score: 0 },
   },
+  {
+    id: 'TC-42',
+    name: 'Environment isolation: Student process runs with empty environ (count 0)',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: `
+#include <iostream>
+extern char **environ;
+// STUDENT_BEGIN solve
+int solve();
+// STUDENT_END
+int main() {
+    std::cout << solve() << std::endl;
+    return 0;
+}
+`,
+        regions: {
+          solve: `int solve() {
+            int count = 0;
+            if (environ) {
+                for (char **e = environ; *e != nullptr; ++e) {
+                    count++;
+                }
+            }
+            return count;
+          }`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '', expected: '0' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-43',
+    name: 'Compiler message truncation: Huge compile error truncated to <= 2000 chars',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 3000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: `
+// STUDENT_BEGIN solve
+void solve();
+// STUDENT_END
+int main() { solve(); return 0; }
+`,
+        regions: {
+          solve: `void solve() {\n${Array.from({ length: 300 }, (_, i) => `  very_long_undeclared_function_name_triggering_compiler_diagnostic_line_${i}();`).join('\n')}\n}`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '', expected: '0' }],
+    },
+    expected: { verdict: 'CE', score: 0, maxCompileMessageLength: 2000 },
+  },
+  {
+    id: 'TC-44',
+    name: 'Sandbox filesystem isolation: Cannot write to /home, /dev/shm, /tmp, /var/tmp, ../',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 2000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: `
+#include <iostream>
+#include <fstream>
+#include <unistd.h>
+#include <pwd.h>
+
+bool can_write(const std::string& path) {
+    std::ofstream ofs(path);
+    if (!ofs.is_open()) return false;
+    ofs << "test";
+    ofs.close();
+    unlink(path.c_str());
+    return true;
+}
+
+// STUDENT_BEGIN solve
+int solve();
+// STUDENT_END
+
+int main() {
+    std::cout << solve() << std::endl;
+    return 0;
+}
+`,
+        regions: {
+          solve: `int solve() {
+            int writable_count = 0;
+            uid_t u = getuid();
+            struct passwd *pw = getpwuid(u);
+            if (pw && pw->pw_dir) {
+                std::string p = std::string(pw->pw_dir) + "/x";
+                if (can_write(p)) writable_count++;
+            }
+            char home_path[128];
+            snprintf(home_path, sizeof(home_path), "/home/sandbox%u/x", (unsigned)u);
+            if (can_write(home_path)) writable_count++;
+
+            if (can_write("/dev/shm/x")) writable_count++;
+            if (can_write("/tmp/x")) writable_count++;
+            if (can_write("/var/tmp/x")) writable_count++;
+            if (can_write("../x")) writable_count++;
+            return writable_count;
+          }`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '', expected: '0' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-45',
+    name: 'Validation: Job exceeding memory budget (500MB > 400MB) rejected with HTTP 400',
+    mode: 'http-validation',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 500,
+      compare: 'trim-trailing',
+      template: {
+        source: TEMPLATE_SUM,
+        regions: { solve: 'int solve(int a, int b) { return a + b; }' },
+      },
+      hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
+    },
+    expected: { statusCode: 400 },
+  },
 ];

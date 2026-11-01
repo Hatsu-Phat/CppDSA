@@ -37,8 +37,10 @@ export function sanitizeCompileMessage(
   message = message.replace(/\/tmp\/run_[A-Za-z0-9_.-]+/g, '');
 
   // 3. Limit to at most 2000 characters
-  if (message.length > 2000) {
-    message = message.slice(0, 1990) + '\n...[TRUNCATED]';
+  const MAX_MESSAGE_LEN = 2000;
+  const TRUNCATE_SUFFIX = '\n...[TRUNCATED]';
+  if (message.length > MAX_MESSAGE_LEN) {
+    message = message.slice(0, MAX_MESSAGE_LEN - TRUNCATE_SUFFIX.length) + TRUNCATE_SUFFIX;
   }
 
   return message;
@@ -65,6 +67,7 @@ export async function compileCpp(
   if (useLauncher) {
     cmd = launcherPath;
     args = [
+      '--compiler-env',
       '--workdir',
       runDir,
       '--uid',

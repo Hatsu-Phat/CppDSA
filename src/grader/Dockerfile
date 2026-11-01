@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libseccomp2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create pool of unprivileged sandbox users (UID 10001 to 10008)
-RUN for uid in $(seq 10001 10008); do \
+# Create pool of unprivileged sandbox users with no home directory (UID 2000000000 to 2000000015)
+RUN for uid in $(seq 2000000000 2000000015); do \
       groupadd -g $uid sandbox$uid && \
-      useradd -u $uid -g $uid -m -s /bin/bash sandbox$uid; \
+      useradd -u $uid -g $uid -M -d /nonexistent -s /usr/sbin/nologin sandbox$uid; \
     done
 
 WORKDIR /app
@@ -38,6 +38,10 @@ RUN gcc -O2 -Wall -Wextra src/grader/native/launcher.c -lseccomp -o /usr/local/b
     && chmod 755 /usr/local/bin/launcher \
     && chown root:root /usr/local/bin/launcher
 
+# Install entrypoint script
+COPY src/grader/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
+
 # Build dependencies and service
 RUN npm run --workspace=src/shared build
 RUN npm run --workspace=src/grader build
@@ -51,6 +55,9 @@ RUN chmod 700 /app \
     && mkdir -p /dev/shm && chmod 755 /dev/shm && chown root:root /dev/shm
 
 WORKDIR /app/src/grader
+ENV SANDBOX_UID_BASE=2000000000
+ENV SANDBOX_UID_COUNT=8
+ENV GRADER_MEMORY_BUDGET_MB=400
 EXPOSE 4100
-ENTRYPOINT ["dumb-init", "--"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "dist/index.js"]

@@ -36,6 +36,8 @@ export function buildGraderApp(
       status: 'ok',
       queueLength: stats.queueLength,
       activeJobs: stats.activeJobs,
+      activeMemoryMb: stats.activeMemoryMb,
+      memoryBudgetMb: stats.memoryBudgetMb,
     });
   });
 
@@ -79,6 +81,12 @@ export function buildGraderApp(
 
     if (typeof body.memoryLimitMb !== 'number' || body.memoryLimitMb <= 0) {
       return reply.code(400).send({ error: 'memoryLimitMb must be a positive number' });
+    }
+
+    if (body.memoryLimitMb > config.memoryBudgetMb) {
+      return reply.code(400).send({
+        error: `memoryLimitMb (${body.memoryLimitMb}) exceeds grader memory budget (${config.memoryBudgetMb})`,
+      });
     }
 
     if (!Array.isArray(body.hiddenTests) || body.hiddenTests.length === 0) {
