@@ -4,6 +4,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { compileCpp, sanitizeCompileMessage } from '../src/compiler.js';
 import { runTest } from '../src/runner.js';
+import { buildGraderApp } from '../src/app.js';
+import { JobQueue } from '../src/queue.js';
 
 describe('Grader Hardening & Resource Limiting Tests', () => {
   it('compile timeout returns friendly error message without leaking paths', async () => {
@@ -155,5 +157,85 @@ describe('Grader Hardening & Resource Limiting Tests', () => {
     expect(runRes.timeMs).toBe(800); // exactly user + sys time
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GET /jobs/:id/metrics requires X-Grader-Secret header (401 without, 200 with)', async () => {
+    const fakeConfig: any = {
+      graderSecret: 'dev-grader-secret',
+      memoryBudgetMb: 400,
+      concurrency: 1,
+      sandboxUidBase: 2000000000,
+      sandboxUidCount: 10,
+    };
+    const queue = new JobQueue(fakeConfig);
+    queue.recordJobMetric('sub-123', {
+      queueMs: 50,
+      compileMs: 200,
+      runMs: 80,
+      totalMs: 330,
+    });
+
+    const app = buildGraderApp(fakeConfig, queue);
+
+    // 1. Without header -> 401
+    const resNoHeader = await app.inject({
+      method: 'GET',
+      url: '/jobs/sub-123/metrics',
+    });
+    expect(resNoHeader.statusCode).toBe(401);
+
+    // 2. With invalid header -> 401
+    const resWrongHeader = await app.inject({
+      method: 'GET',
+      url: '/jobs/sub-123/metrics',
+      headers: { 'x-grader-secret': 'wrong-secret' },
+    });
+    expect(resWrongHeader.statusCode).toBe(401);
+
+    // 3. With correct header -> 200 and returns metrics
+    const resOk = await app.inject({
+      method: 'GET',
+      url: '/jobs/sub-123/metrics',
+      headers: { 'x-grader-secret': 'dev-grader-secret' },
+    });
+    expect(resOk.statusCode).toBe(200);
+    const body = resOk.json();
+    expect(body.queueMs).toBe(50);
+    expect(body.compileMs).toBe(200);
+    expect(body.runMs).toBe(80);
+    expect(body.totalMs).toBe(330);
+  });
+
+  it('recentMetrics in JobQueue is capped at 1000 items (FIFO purging oldest)', () => {
+    const fakeConfig: any = {
+      graderSecret: 'dev-grader-secret',
+      memoryBudgetMb: 400,
+      concurrency: 1,
+      sandboxUidBase: 2000000000,
+      sandboxUidCount: 10,
+    };
+    const queue = new JobQueue(fakeConfig);
+
+    // Record 1005 items
+    for (let i = 1; i <= 1005; i++) {
+      queue.recordJobMetric(`sub-${i}`, {
+        queueMs: i,
+        compileMs: i,
+        runMs: i,
+        totalMs: i * 3,
+      });
+    }
+
+    // Size must not exceed 1000
+    expect(queue.getRecentMetricsSize()).toBe(1000);
+
+    // Oldest items (1..5) should have been removed
+    for (let i = 1; i <= 5; i++) {
+      expect(queue.getJobMetrics(`sub-${i}`)).toBeUndefined();
+    }
+
+    // Items 6..1005 must exist
+    expect(queue.getJobMetrics('sub-6')).toBeDefined();
+    expect(queue.getJobMetrics('sub-1005')).toBeDefined();
   });
 });

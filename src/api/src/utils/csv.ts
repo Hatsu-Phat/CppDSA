@@ -141,8 +141,12 @@ export function escapeCsvField(field: unknown): string {
   if (field === null || field === undefined) {
     return '';
   }
-  const str = String(field);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+  let str = String(field);
+  // CSV formula injection mitigation: prepend single quote if starting with =, +, -, @, tab, or CR
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;

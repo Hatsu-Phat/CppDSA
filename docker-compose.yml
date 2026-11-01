@@ -29,6 +29,8 @@ services:
       GRADER_SECRET: ${GRADER_SECRET:-dev-grader-secret}
       API_BASE_URL: http://api:4000
       NODE_ENV: development
+      COOKIE_SECRET: ${COOKIE_SECRET:-dev-cookie-secret-32-characters-minimum-key!}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:

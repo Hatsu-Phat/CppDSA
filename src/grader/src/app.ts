@@ -42,9 +42,23 @@ export function buildGraderApp(
   });
 
   // Internal metrics endpoint for load test latency breakdown
-  app.get('/jobs/:submissionId/metrics', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { submissionId } = request.params as { submissionId: string };
-    const metrics = jobQueue.getJobMetrics(submissionId);
+  app.get('/jobs/:id/metrics', async (request: FastifyRequest, reply: FastifyReply) => {
+    // 1. Secret authentication
+    if (!config.graderSecret) {
+      return reply.code(503).send({ error: 'Grader secret not configured' });
+    }
+
+    const secretHeader = request.headers['x-grader-secret'];
+    if (
+      !secretHeader ||
+      typeof secretHeader !== 'string' ||
+      !constantTimeEqual(secretHeader, config.graderSecret)
+    ) {
+      return reply.code(401).send({ error: 'Unauthorized: invalid or missing X-Grader-Secret' });
+    }
+
+    const id = (request.params as any).id || (request.params as any).submissionId;
+    const metrics = jobQueue.getJobMetrics(id);
     if (!metrics) {
       return reply.code(404).send({ error: 'Metrics not found' });
     }

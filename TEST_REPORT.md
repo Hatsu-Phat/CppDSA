@@ -289,3 +289,13 @@
   5. (Thấp) `GET /jobs/:id/metrics` của grader không xác thực, `recentMetrics` không giới hạn; API không chặn khởi động khi `NODE_ENV=production` mà thiếu `COOKIE_SECRET`/`GRADER_SECRET`; `src/api/Dockerfile` không đặt `NODE_ENV=production` (cookie chỉ `Secure` khi biến này đúng).
 - Tài liệu: `docs/AZURE_SETUP.md` §4.1 sai — `ALTER DEFAULT PRIVILEGES` chạy bởi admin không áp dụng cho bảng do `cppdsa_migrator` tạo. Thực nghiệm local (PG16): migrate bằng migrator → `has_table_privilege('cppdsa_app','users','SELECT') = f`. Sửa bằng `GRANT ... ON ALL TABLES` sau migration + `ALTER DEFAULT PRIVILEGES FOR ROLE cppdsa_migrator ...` → `t`; khi đó API khởi động bằng `cppdsa_app` (`No migrations to run!`, listen OK) và `seed:lecturer` chạy được. `CREATE EXTENSION pgcrypto` không cần (`gen_random_uuid()` có sẵn từ PG13). `docs/DEV_SETUP.md` còn ghi `GRADER_CONCURRENCY=2`, budget 384 (chốt P8: 1, 400).
 - Kết luận: CHƯA nên deploy cho lớp thật trước khi sửa lỗi 1 (hoặc tạm nâng `LOGIN_RATE_LIMIT_MAX`/`GLOBAL_RATE_LIMIT_MAX` qua env, chấp nhận giảm bảo vệ brute-force); lỗi 2–4 nên sửa trước pilot. Đã lập task `handoff/tasks/T-0011.md`.
+
+### T-0011 vòng 1 — sửa lỗi API trước deploy — review — 2026-11-02
+- File sửa đều trong Allowed files (14 file + `src/api/tests/deploy-fixes.test.ts`). Test mới dùng `buildApp` thật, có đủ các ca rate limit (a–d), CSV, UUID, biên TL/ML (POST và PUT), production guard.
+- Lệnh 1: exit 0; api `36 passed | 52 skipped` (trước 21|52), grader `15 passed` (trước 13); audit 5 moderate, 0 high/critical ✔.
+- Lệnh 2 (`TEST_DATABASE_URL`, PostgreSQL compose): `Test Files 7 passed`, `Tests 88 passed` ✔.
+- Lệnh 3: grader `--memory 512m --cpus 0.15` → `Summary: 58/58 cases PASSED` ✔.
+- Lệnh 4: compose với `TRUST_PROXY=1` → E2E `2 passed (44.8s)` ✔.
+- Probe 80 điểm của Claude chạy lại: 77 PASS. Lỗi cũ đã hết: `timeLimitMs -1`/`memoryLimitMb 999999` → 400; `/submissions|assignments|classrooms/abc` → 400 `Mã không hợp lệ` (không còn `22P02`); CSV xuất `'=HYPERLINK(...)`. 3 FAIL còn lại không phải lỗi sản phẩm: B8/B12 do probe gửi `studentId=undefined` nên nay bị chặn 400 bởi kiểm UUID trước bước phân quyền (vẫn từ chối); H1 do 3 lần nộp không hợp lệ trước đó được tính vào hạn mức 6/phút (đúng thiết kế).
+- Qua proxy (rewrite của web): container A đăng nhập sai 10 lần email X → container B (IP khác) đăng nhập email khác qua web → **200** (trước T-0011: 429) ✔.
+- Kết luận: PASS. Merge `task/T-0011` → main. Còn phải xác minh trên production: giá trị `TRUST_PROXY` đúng cho chuỗi Vercel → Render (DEPLOY.md §6 bước 4).

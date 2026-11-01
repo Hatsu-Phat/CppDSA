@@ -96,8 +96,31 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
         .send({ error: 'BAD_REQUEST', message: 'Hạn nộp (deadline) không hợp lệ' });
     }
 
-    const timeLimitMs = Number(body.timeLimitMs || 1000);
-    const memoryLimitMb = Number(body.memoryLimitMb || 256);
+    const timeLimitMs = body.timeLimitMs !== undefined ? body.timeLimitMs : 1000;
+    if (
+      typeof timeLimitMs !== 'number' ||
+      !Number.isInteger(timeLimitMs) ||
+      timeLimitMs < 100 ||
+      timeLimitMs > 10000
+    ) {
+      return reply.code(400).send({
+        error: 'BAD_REQUEST',
+        message: 'timeLimitMs phải là số nguyên trong khoảng [100, 10000]',
+      });
+    }
+
+    const memoryLimitMb = body.memoryLimitMb !== undefined ? body.memoryLimitMb : 256;
+    if (
+      typeof memoryLimitMb !== 'number' ||
+      !Number.isInteger(memoryLimitMb) ||
+      memoryLimitMb < 16 ||
+      memoryLimitMb > 512
+    ) {
+      return reply.code(400).send({
+        error: 'BAD_REQUEST',
+        message: 'memoryLimitMb phải là số nguyên trong khoảng [16, 512]',
+      });
+    }
 
     const templateCode = body.templateCode || null;
     const entryPointSpec = body.entryPointSpec || null;
@@ -307,10 +330,38 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
     const body = request.body as any;
     const title = body.title !== undefined ? body.title : assignment.title;
     const description = body.description !== undefined ? body.description : assignment.description;
+
+    if (body.timeLimitMs !== undefined) {
+      if (
+        typeof body.timeLimitMs !== 'number' ||
+        !Number.isInteger(body.timeLimitMs) ||
+        body.timeLimitMs < 100 ||
+        body.timeLimitMs > 10000
+      ) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'timeLimitMs phải là số nguyên trong khoảng [100, 10000]',
+        });
+      }
+    }
     const timeLimitMs =
-      body.timeLimitMs !== undefined ? Number(body.timeLimitMs) : assignment.time_limit_ms;
+      body.timeLimitMs !== undefined ? body.timeLimitMs : assignment.time_limit_ms;
+
+    if (body.memoryLimitMb !== undefined) {
+      if (
+        typeof body.memoryLimitMb !== 'number' ||
+        !Number.isInteger(body.memoryLimitMb) ||
+        body.memoryLimitMb < 16 ||
+        body.memoryLimitMb > 512
+      ) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'memoryLimitMb phải là số nguyên trong khoảng [16, 512]',
+        });
+      }
+    }
     const memoryLimitMb =
-      body.memoryLimitMb !== undefined ? Number(body.memoryLimitMb) : assignment.memory_limit_mb;
+      body.memoryLimitMb !== undefined ? body.memoryLimitMb : assignment.memory_limit_mb;
     const deadline = body.deadline !== undefined ? new Date(body.deadline) : assignment.deadline;
     const templateCode =
       body.templateCode !== undefined ? body.templateCode : assignment.template_code;
