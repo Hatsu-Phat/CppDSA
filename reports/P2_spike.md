@@ -258,3 +258,30 @@ Trong task tiếp theo khi triển khai spike lên Render:
    - Bổ sung hiển thị `nproc`, `os.cpus().length`, đồng thời đo thời gian CPU thực tế (`user_time_ms` + `sys_time_ms`) từ `rusage.json` bên cạnh wall-clock time.
    - Tính toán tỉ lệ `CPU throttle ratio` = `CPU time / Wall time` (giá trị ~0.15 tương ứng với mức giới hạn 0.15 CPU trên Render free, trong khi môi trường dev cục bộ đạt ~0.95).
 
+---
+
+## 9. Đánh giá Thực nghiệm trên Render Free và Giải pháp Hoàn thiện Vòng 3 (Task T-0004 Round 3)
+
+### 9.1. Đánh giá kết quả Render Free thực tế (Service `cppdsa-spike`, Singapore, 0.15 CPU)
+- **OOM và NPROC:** Các giải pháp Vòng 2 (`SANDBOX_UID=2000000000`, `SPIKE_MEMORY_BUDGET_MB=384`) đã phát huy hiệu quả hoàn hảo. Container không còn bị cgroup OOM-kill và không còn gặp lỗi `EAGAIN` tài nguyên.
+- **Benchmark CPU-bound (`/bench`):** Đạt kết quả ổn định cao với thời gian thực thi: wall mean = 2128.80 ms, StdDev = 1.56%, CPU time = 314 ms, tỉ lệ CPU/wall = 0.148 (khớp chính xác với hạn mức 0.15 CPU do Render cấp).
+- **Hiện tượng chậm và TLE/Surviving Processes trong `/run-suite`:** Khi chạy trên 0.15 CPU, thời gian biên dịch C++ (`g++ -std=c++17 -O2`) tốn ~5.5–6.7 s wall-time (vượt ngưỡng timeout biên dịch mặc định 5 s cũ), dẫn đến 14 ca CE rỗng. Đồng thời, cách tính TLE theo wall-time đơn thuần làm các ca `q4_escape_setsid` và `q6_stderr_flood` bị TLE oan. Ngoài ra, các tiến trình con thoát session (`setsid`) để lại zombie chưa kịp reap bởi PID 1 (`dumb-init`) trong các lát cắt thời gian CPU hạn hẹp.
+
+### 9.2. Bốn giải pháp hoàn thiện Vòng 3
+1. **Nâng và cấu hình hóa thời hạn biên dịch (`COMPILE_TIMEOUT_MS`):**
+   - Đưa vào biến môi trường `COMPILE_TIMEOUT_MS` với giá trị mặc định `60000` (60 giây), cung cấp đủ hạn mức wall-time cho trình biên dịch hoàn tất trên CPU bị giới hạn 0.15.
+   - Phân loại riêng verdict `CTE` ("compile timeout") khi quá hạn biên dịch thay vì gán CE với thông báo lỗi rỗng, giúp thông báo chính xác nguyên nhân lỗi.
+   - Bổ sung đo đạc và in thời gian biên dịch thực tế của từng ca (`comp ms`) ngay trên bảng kết quả.
+2. **Xác định TLE theo thời gian CPU kết hợp hạn chót wall-clock cứng:**
+   - TLE được xác định chủ yếu dựa trên tổng thời gian CPU thực tế (`user_time_ms` + `sys_time_ms` từ `rusage.json`) so với `timeLimitMs`. Launcher duy trì `RLIMIT_CPU = ceil(TL) + 1s` làm chốt chặn bảo vệ tầng kernel.
+   - Bổ sung biến môi trường `WALL_FACTOR` (mặc định 10). Thiết lập hạn chót wall-clock cứng `hardWallLimitMs = TL * WALL_FACTOR + 1s`. Các ca tiêu tốn CPU thấp nhưng cố tình ngủ/treo (như `15_tle_sleep`) sẽ bị dừng an toàn khi chạm hạn chót wall.
+   - Bảng kết quả in đồng thời cả `cpu ms` và `wall ms` để theo dõi chính xác hành vi tiêu thụ tài nguyên.
+3. **Cơ chế quét-diệt đa chu kỳ và thu hồi Zombie qua PID 1 (`dumb-init`):**
+   - Cài đặt hàm bất đồng bộ `cleanupSandboxProcesses(maxWaitMs = 3000)`: lặp quét `/proc` mỗi 100 ms, gửi `SIGKILL` tới mọi tiến trình sandbox còn sống, đồng thời chủ động gửi tín hiệu `SIGCHLD` cho PID 1 (`dumb-init`) để kích hoạt reap tức thì các tiến trình con zombie.
+   - Đọc trực tiếp trường `State` (Z/R/D/S), `PPid` và `Name` từ `/proc/<pid>/status` để in cảnh báo chẩn đoán chi tiết nếu còn tiến trình sót sau 3 giây.
+   - Dọn dẹp an toàn trước và sau mỗi ca kiểm thử, loại bỏ triệt để rủi ro ca sau thất bại vì tiến trình còn sót của ca trước.
+4. **Bổ sung đo thông lượng biên dịch trong `/env-probe`:**
+   - Bổ sung hàm đo thời gian biên dịch một chương trình C++ nhỏ sử dụng `#include <bits/stdc++.h>` (`compile_bits_stdcxx_ms`).
+   - Cung cấp số liệu định lượng trực tiếp về năng lực tính toán và thông lượng biên dịch thực tế của môi trường chạy trước khi thực hiện các bài chấm.
+
+

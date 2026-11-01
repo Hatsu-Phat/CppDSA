@@ -140,6 +140,7 @@ async function runSelftest() {
             typeof p.uid === 'number' &&
             typeof p.gid === 'number' &&
             typeof p.sandboxProcessesCount === 'number' &&
+            typeof p.compile_bits_stdcxx_ms === 'number' && p.compile_bits_stdcxx_ms > 0 &&
             p.procStatus && typeof p.procStatus.Seccomp !== 'undefined' &&
             p.procStatus && typeof p.procStatus.NoNewPrivs !== 'undefined' &&
             p.procStatus && typeof p.procStatus.CapEff !== 'undefined' &&
@@ -150,7 +151,7 @@ async function runSelftest() {
             p.launcherProbe?.fork_test?.forked === 5;
 
         report('/env-probe đúng → 200 và có các trường trên', probeFieldsOk,
-            `status=${resProbeValid.status}, cpus=${p.cpus}, uid=${p.uid}, seccomp=${p.procStatus?.Seccomp}, setuid_ok=${p.launcherProbe?.setuid?.ok}, setrlimit_ok=${p.launcherProbe?.setrlimit?.ok}, seccomp_load_ok=${p.launcherProbe?.seccomp_load?.ok}, fork_test_ok=${p.launcherProbe?.fork_test?.ok}, sandbox_procs=${p.sandboxProcessesCount}`);
+            `status=${resProbeValid.status}, cpus=${p.cpus}, uid=${p.uid}, compile_bits_ms=${p.compile_bits_stdcxx_ms}, seccomp=${p.procStatus?.Seccomp}, setuid_ok=${p.launcherProbe?.setuid?.ok}, setrlimit_ok=${p.launcherProbe?.setrlimit?.ok}, seccomp_load_ok=${p.launcherProbe?.seccomp_load?.ok}, fork_test_ok=${p.launcherProbe?.fork_test?.ok}, sandbox_procs=${p.sandboxProcessesCount}`);
 
         // 5. Concurrency check: gọi đồng thời 2 lần → một lần 409
         console.log('\n--- PHẦN 3: Kiểm tra khóa đồng thời và thực thi /run-suite ---');

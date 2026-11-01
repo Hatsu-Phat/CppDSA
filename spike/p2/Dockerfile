@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG SANDBOX_UID=2000000000
 ENV SANDBOX_UID=${SANDBOX_UID}
 ENV SPIKE_MEMORY_BUDGET_MB=384
+ENV COMPILE_TIMEOUT_MS=60000
+ENV WALL_FACTOR=10
 
 # Tạo người dùng sandbox không đặc quyền tương ứng SANDBOX_UID
 RUN groupadd -g ${SANDBOX_UID} sandbox && \

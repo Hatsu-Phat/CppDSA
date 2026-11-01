@@ -64,7 +64,7 @@ async function main() {
     try {
         probeRes = await fetch(`${baseUrl}/env-probe`, {
             headers: { 'X-Spike-Secret': secret },
-            signal: AbortSignal.timeout(30000)
+            signal: AbortSignal.timeout(60000)
         });
         probeJson = await probeRes.json();
     } catch (err) {
@@ -72,13 +72,13 @@ async function main() {
         probeJson = { error: err.message };
     }
 
-    // 3. POST /run-suite (can take up to a few minutes)
+    // 3. POST /run-suite (can take up to 5-10 minutes on throttled instance)
     let suiteRes, suiteJson;
     try {
         suiteRes = await fetch(`${baseUrl}/run-suite`, {
             method: 'POST',
             headers: { 'X-Spike-Secret': secret },
-            signal: AbortSignal.timeout(360000)
+            signal: AbortSignal.timeout(600000)
         });
         suiteJson = await suiteRes.json();
     } catch (err) {

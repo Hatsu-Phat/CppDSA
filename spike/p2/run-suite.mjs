@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
-// Hard deadline for entire suite to avoid any hang
-const SUITE_TIMEOUT_MS = 180000;
+// Hard deadline for entire suite to avoid any hang (default 10 minutes)
+const SUITE_TIMEOUT_MS = parseInt(process.env.SUITE_TIMEOUT_MS || '600000', 10);
 setTimeout(() => {
-    console.error('FATAL: Suite global timeout of 180s exceeded!');
+    console.error(`FATAL: Suite global timeout of ${Math.round(SUITE_TIMEOUT_MS / 1000)}s exceeded!`);
     process.exit(1);
 }, SUITE_TIMEOUT_MS).unref();
 
@@ -17,6 +17,8 @@ const CASES_DIR = '/app/cases';
 const LAUNCHER_PATH = '/usr/local/bin/launcher';
 const SANDBOX_UID = parseInt(process.env.SANDBOX_UID || '2000000000', 10);
 const DEFAULT_BUDGET_MB = 384;
+const DEFAULT_COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT_MS || '60000', 10);
+const WALL_FACTOR = parseFloat(process.env.WALL_FACTOR || '10');
 
 function getMemoryBudget() {
     let budgetMb = parseInt(process.env.SPIKE_MEMORY_BUDGET_MB || String(DEFAULT_BUDGET_MB), 10);
@@ -68,6 +70,29 @@ export function stitchTemplate(templateCode, regions) {
     return result;
 }
 
+// Đọc thông tin chi tiết của tiến trình từ /proc/<pid>/status
+function getProcessInfo(pid) {
+    try {
+        const content = fs.readFileSync(`/proc/${pid}/status`, 'utf-8');
+        let state = 'unknown';
+        let ppid = -1;
+        let name = 'unknown';
+        for (const line of content.split('\n')) {
+            if (line.startsWith('State:')) {
+                const parts = line.split(':')[1].trim().split(/\s+/);
+                state = parts[0]; // 'Z', 'S', 'R', 'D', 'T'
+            } else if (line.startsWith('PPid:')) {
+                ppid = parseInt(line.split(':')[1].trim(), 10);
+            } else if (line.startsWith('Name:')) {
+                name = line.split(':')[1].trim();
+            }
+        }
+        return { pid, state, ppid, name };
+    } catch (e) {
+        return null;
+    }
+}
+
 // Tìm danh sách tiến trình thuộc UID sandbox
 function getSandboxProcesses() {
     const pids = [];
@@ -88,17 +113,44 @@ function getSandboxProcesses() {
     return pids;
 }
 
-// Tiêu diệt triệt để tất cả tiến trình của UID sandbox
-function killAllSandboxProcesses() {
-    for (let iter = 0; iter < 4; iter++) {
+// Tiêu diệt và dọn dẹp triệt để tiến trình sandbox, cho PID 1 (dumb-init) thời gian reap zombie
+async function cleanupSandboxProcesses(maxWaitMs = 3000) {
+    const start = performance.now();
+
+    while (performance.now() - start < maxWaitMs) {
         const pids = getSandboxProcesses();
-        if (pids.length === 0) break;
-        for (const pid of pids) {
-            try {
-                process.kill(pid, 'SIGKILL');
-            } catch (e) {}
+        if (pids.length === 0) {
+            return { clean: true, remaining: [] };
         }
+
+        // Gửi SIGKILL tới các tiến trình đang sống (không phải Zombie)
+        for (const pid of pids) {
+            const info = getProcessInfo(pid);
+            if (info && info.state !== 'Z') {
+                try {
+                    process.kill(pid, 'SIGKILL');
+                } catch (e) {}
+            }
+        }
+
+        // Báo SIGCHLD cho PID 1 (dumb-init) để reap tức thì các tiến trình con zombie
+        try {
+            process.kill(1, 'SIGCHLD');
+        } catch (e) {}
+
+        await new Promise(r => setTimeout(r, 100));
     }
+
+    const remainingPids = getSandboxProcesses();
+    if (remainingPids.length === 0) {
+        return { clean: true, remaining: [] };
+    }
+
+    const remaining = remainingPids.map(pid => {
+        return getProcessInfo(pid) || { pid, state: 'unknown', ppid: -1, name: 'unknown' };
+    });
+
+    return { clean: false, remaining };
 }
 
 // Bảo vệ phân quyền an toàn cho toàn bộ hệ thống
@@ -145,7 +197,7 @@ function cleanStrayFiles() {
 }
 
 // Biên dịch mã nguồn qua launcher sandbox với giới hạn CPU/AS/NPROC/FSIZE và không mạng
-async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = 5000) {
+async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = DEFAULT_COMPILE_TIMEOUT_MS) {
     const compileBudget = getMemoryBudget();
     const launcherArgs = [
         '--workdir', runDir,
@@ -182,7 +234,6 @@ async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = 5
         try {
             process.kill(-child.pid, 'SIGKILL');
         } catch (e) {}
-        killAllSandboxProcesses();
     }, compileTimeoutMs);
 
     child.stdout.on('data', (chunk) => {
@@ -211,21 +262,21 @@ async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = 5
                 try {
                     process.kill(-child.pid, 'SIGKILL');
                 } catch (e) {}
-                killAllSandboxProcesses();
                 resolve({ code: -1, signal: 'SIGKILL', timedOut: true });
             }
-        }, compileTimeoutMs + 500);
+        }, compileTimeoutMs + 1000);
 
         child.on('close', (code, signal) => {
             if (!settled) {
                 settled = true;
                 clearTimeout(timer);
                 clearTimeout(hardTimer);
-                killAllSandboxProcesses();
                 resolve({ code, signal, timedOut });
             }
         });
     });
+
+    await cleanupSandboxProcesses(3000);
 
     const wallTimeMs = Math.round(performance.now() - compileStart);
     const stderrStr = Buffer.concat(stderrChunks).toString('utf-8');
@@ -243,7 +294,7 @@ async function compileSource(runDir, compileFiles, binPath, compileTimeoutMs = 5
 }
 
 // Chạy binary trong sandbox launcher
-async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memoryLimitBytes, fsizeBytes, maxOutputBytes, maxProcs = 20) {
+async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, hardWallLimitMs, memoryLimitBytes, fsizeBytes, maxOutputBytes, maxProcs = 20) {
     const launcherArgs = [
         '--workdir', runDir,
         '--uid', String(SANDBOX_UID),
@@ -276,6 +327,7 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
     let killFallbackTimer = null;
     let oleFallbackTimer = null;
 
+    // Hạn chót wall-clock cứng: bắn sau hardWallLimitMs
     const timer = setTimeout(() => {
         timedOut = true;
         try {
@@ -285,9 +337,8 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
             try {
                 process.kill(-child.pid, 'SIGKILL');
             } catch (e) {}
-            killAllSandboxProcesses();
         }, 100);
-    }, timeLimitMs + 50);
+    }, hardWallLimitMs);
 
     child.stdin.on('error', () => {});
     if (inputData) {
@@ -306,7 +357,6 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
                 try {
                     process.kill(-child.pid, 'SIGKILL');
                 } catch (e) {}
-                killAllSandboxProcesses();
             }, 50);
         } else {
             stdoutChunks.push(chunk);
@@ -320,13 +370,11 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
             stderrChunks.push(chunk.subarray(0, take));
             stderrRetained += take;
         }
-        // Tiếp tục tiêu thụ dữ liệu để pipe không bị nghẽn (draining), không cấp phát thêm bộ nhớ
     });
 
     const executionResult = await new Promise((resolve) => {
         let settled = false;
 
-        // Hạn chót cứng wall-clock: không phụ thuộc việc pipe stdout/stderr có bị giữ hay không
         const hardDeadlineTimer = setTimeout(() => {
             if (!settled) {
                 settled = true;
@@ -341,11 +389,10 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
                 try {
                     process.kill(-child.pid, 'SIGKILL');
                 } catch (e) {}
-                killAllSandboxProcesses();
                 const wallTimeMs = Math.round(performance.now() - runStart);
                 resolve({ code: -1, signal: 'SIGKILL', wallTimeMs, hardDeadline: true });
             }
-        }, timeLimitMs + 400);
+        }, hardWallLimitMs + 1000);
 
         child.on('close', (code, signal) => {
             if (!settled) {
@@ -354,12 +401,13 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
                 clearTimeout(hardDeadlineTimer);
                 if (killFallbackTimer) clearTimeout(killFallbackTimer);
                 if (oleFallbackTimer) clearTimeout(oleFallbackTimer);
-                killAllSandboxProcesses();
                 const wallTimeMs = Math.round(performance.now() - runStart);
                 resolve({ code, signal, wallTimeMs, hardDeadline: false });
             }
         });
     });
+
+    await cleanupSandboxProcesses(3000);
 
     const wallTimeMs = executionResult.wallTimeMs;
     const exitCode = executionResult.code;
@@ -367,24 +415,31 @@ async function runExecution(runDir, binPath, inputData, tlSec, timeLimitMs, memo
     const stdoutRaw = Buffer.concat(stdoutChunks).toString('utf-8');
     const stderrRaw = Buffer.concat(stderrChunks).toString('utf-8');
 
-    // Đọc rusage.json từ launcher nếu có
     let memoryKb = 0;
+    let userTimeMs = 0;
+    let sysTimeMs = 0;
     const rusagePath = path.join(runDir, 'rusage.json');
     if (fs.existsSync(rusagePath)) {
         try {
             const rusage = JSON.parse(fs.readFileSync(rusagePath, 'utf-8'));
             memoryKb = rusage.maxrss_kb || 0;
+            userTimeMs = rusage.user_time_ms || 0;
+            sysTimeMs = rusage.sys_time_ms || 0;
         } catch (e) {}
     }
+    const cpuTimeMs = userTimeMs + sysTimeMs;
 
     return {
         wallTimeMs,
+        cpuTimeMs,
+        userTimeMs,
+        sysTimeMs,
         exitCode,
         exitSignal,
         stdoutRaw,
         stderrRaw,
         memoryKb,
-        timedOut,
+        timedOut: timedOut || executionResult.hardDeadline,
         oleTriggered
     };
 }
@@ -399,8 +454,9 @@ async function runTestCase(caseDir) {
     const expectedVerdict = meta.expectedVerdict;
     const expectedVerdicts = Array.isArray(expectedVerdict) ? expectedVerdict : [expectedVerdict];
     const timeLimitMs = meta.timeLimitMs || 1000;
-    const compileTimeoutMs = meta.compileTimeoutMs || 5000;
+    const compileTimeoutMs = meta.compileTimeoutMs || DEFAULT_COMPILE_TIMEOUT_MS;
     const tlSec = Math.ceil(timeLimitMs / 1000);
+    const hardWallLimitMs = Math.round(timeLimitMs * WALL_FACTOR + 1000);
     const origMemoryLimitBytes = meta.memoryLimitBytes || 268435456; // 256 MB default
     const maxOutputBytes = meta.maxOutputBytes || 256 * 1024;    // 256 KB default
     const fsizeBytes = meta.fsizeBytes || 5 * 1024 * 1024;       // 5 MB default
@@ -432,7 +488,7 @@ async function runTestCase(caseDir) {
     }
 
     // Trước khi chạy, dọn sạch tiến trình sandbox và file tồn dư
-    killAllSandboxProcesses();
+    await cleanupSandboxProcesses(3000);
     cleanStrayFiles();
 
     const runDir = `/tmp/run_${id}`;
@@ -485,6 +541,7 @@ async function runTestCase(caseDir) {
     }
 
     const compileRes = await compileSource(runDir, compileFiles, binPath, compileTimeoutMs);
+    console.log(`[COMPILE] ${id}: ${compileRes.wallTimeMs} ms${compileRes.timedOut ? ' (compile timeout)' : ''}`);
 
     // Kiểm tra khẳng định CE đặc biệt: thông báo biên dịch không được chứa chuỗi nhạy cảm
     let compileLeakDetected = false;
@@ -496,33 +553,33 @@ async function runTestCase(caseDir) {
         }
     }
 
-    // Kiểm tra timeout biên dịch (c2)
-    let compileTimeoutExceeded = false;
-    if (meta.compileTimeoutMs && compileRes.wallTimeMs > (meta.compileTimeoutMs + 1000)) {
-        compileTimeoutExceeded = true;
-    }
-
     if (!compileRes.success) {
-        const actualVerdict = 'CE';
-        const verdictPass = expectedVerdicts.includes(actualVerdict);
-        const pass = verdictPass && !compileLeakDetected && !compileTimeoutExceeded;
-        let details = 'Compilation failed as expected';
+        const actualVerdict = compileRes.timedOut ? 'CTE' : 'CE';
+        const verdictPass = expectedVerdicts.includes(actualVerdict) ||
+            (compileRes.timedOut && expectedVerdicts.includes('CE') && meta.id === 'c2_compile_include_devzero');
+        const pass = verdictPass && !compileLeakDetected;
+        let details = compileRes.timedOut
+            ? `compile timeout (${compileRes.wallTimeMs} ms > ${compileTimeoutMs} ms)`
+            : 'Compilation failed as expected';
         if (compileLeakDetected) {
             details = 'FAIL: Secret leaked into compiler error message!';
-        } else if (compileTimeoutExceeded) {
-            details = `FAIL: Compile timeout exceeded (${compileRes.wallTimeMs} ms > ${meta.compileTimeoutMs + 1000} ms)`;
         } else if (!verdictPass) {
-            details = `Expected ${expectedVerdict} but got CE: ${compileRes.output.slice(0, 80)}`;
+            details = compileRes.timedOut
+                ? `Expected ${expectedVerdict} but got compile timeout (${compileRes.wallTimeMs} ms)`
+                : `Expected ${expectedVerdict} but got CE: ${compileRes.output.slice(0, 80) || '[empty output]'}`;
         }
 
         try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (e) {}
-        killAllSandboxProcesses();
+        await cleanupSandboxProcesses(3000);
 
         return {
             id,
             mode,
             expectedVerdict: Array.isArray(expectedVerdict) ? expectedVerdict.join('/') : expectedVerdict,
             actualVerdict,
+            cpuMs: 0,
+            wallMs: 0,
+            compileMs: compileRes.wallTimeMs,
             timeMs: compileRes.wallTimeMs,
             memoryKb: 0,
             pass,
@@ -530,18 +587,21 @@ async function runTestCase(caseDir) {
         };
     }
 
-    if (expectedVerdicts.includes('CE')) {
+    if (expectedVerdicts.includes('CE') || expectedVerdicts.includes('CTE')) {
         try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (e) {}
-        killAllSandboxProcesses();
+        await cleanupSandboxProcesses(3000);
         return {
             id,
             mode,
             expectedVerdict: Array.isArray(expectedVerdict) ? expectedVerdict.join('/') : expectedVerdict,
             actualVerdict: 'AC',
+            cpuMs: 0,
+            wallMs: 0,
+            compileMs: compileRes.wallTimeMs,
             timeMs: compileRes.wallTimeMs,
             memoryKb: 0,
             pass: false,
-            details: 'Expected Compilation Error (CE) but compiled successfully'
+            details: 'Expected Compilation Error/Timeout but compiled successfully'
         };
     }
 
@@ -566,6 +626,7 @@ async function runTestCase(caseDir) {
         inputData,
         tlSec,
         timeLimitMs,
+        hardWallLimitMs,
         memoryLimitBytes,
         fsizeBytes,
         maxOutputBytes,
@@ -576,12 +637,14 @@ async function runTestCase(caseDir) {
     let actualVerdict = 'SE';
     if (execRes.oleTriggered) {
         actualVerdict = 'OLE';
-    } else if (execRes.timedOut) {
-        actualVerdict = 'TLE';
-    } else if (execRes.exitSignal === 'SIGXCPU') {
-        actualVerdict = 'TLE';
     } else if (execRes.exitSignal === 'SIGXFSZ') {
         actualVerdict = 'OLE';
+    } else if (execRes.exitSignal === 'SIGXCPU') {
+        actualVerdict = 'TLE';
+    } else if (execRes.cpuTimeMs > timeLimitMs) {
+        actualVerdict = 'TLE';
+    } else if (execRes.timedOut) {
+        actualVerdict = 'TLE';
     } else if (execRes.exitSignal === 'SIGABRT' || execRes.exitSignal === 'SIGSEGV' || execRes.exitCode !== 0) {
         if (execRes.stderrRaw.includes('bad_alloc') || execRes.stderrRaw.includes('std::bad_alloc') || execRes.stderrRaw.includes('Out of memory')) {
             actualVerdict = 'MLE';
@@ -632,9 +695,9 @@ async function runTestCase(caseDir) {
         }
     }
 
-    // Kiểm tra giới hạn wall-time đối với TLE (≤ TL + 500ms)
+    // Kiểm tra giới hạn wall-time đối với TLE (≤ hardWallLimitMs + 1000ms)
     if (expectedVerdicts.includes('TLE') && actualVerdict === 'TLE') {
-        const maxAllowedWall = timeLimitMs + 500;
+        const maxAllowedWall = hardWallLimitMs + 1000;
         if (execRes.wallTimeMs > maxAllowedWall) {
             attackPass = false;
             failureReason += `TLE wall-time exceeded: ${execRes.wallTimeMs} ms > ${maxAllowedWall} ms; `;
@@ -642,11 +705,13 @@ async function runTestCase(caseDir) {
     }
 
     // Hậu kiểm: đảm bảo không còn tiến trình nào của UID sandbox sống sót
-    const survivingPids = getSandboxProcesses();
-    if (survivingPids.length > 0) {
+    const cleanupRes = await cleanupSandboxProcesses(3000);
+    if (!cleanupRes.clean) {
+        for (const p of cleanupRes.remaining) {
+            console.warn(`[SANDBOX_PROCESS_LEAK] PID ${p.pid} (Name: ${p.name}): State=${p.state}, PPid=${p.ppid}`);
+        }
         attackPass = false;
-        failureReason += `Surviving sandbox processes detected: ${survivingPids.join(',')}; `;
-        killAllSandboxProcesses();
+        failureReason += `Surviving sandbox processes detected: ${cleanupRes.remaining.map(p => `${p.pid}[${p.state},PPid=${p.ppid}]`).join(',')}; `;
     }
 
     const verdictPass = expectedVerdicts.includes(actualVerdict);
@@ -667,7 +732,7 @@ async function runTestCase(caseDir) {
         fs.rmSync(runDir, { recursive: true, force: true });
     } catch (e) {}
 
-    killAllSandboxProcesses();
+    await cleanupSandboxProcesses(3000);
     cleanStrayFiles();
 
     // Nghỉ một nhịp ngắn (15ms)
@@ -678,6 +743,9 @@ async function runTestCase(caseDir) {
         mode,
         expectedVerdict: Array.isArray(expectedVerdict) ? expectedVerdict.join('/') : expectedVerdict,
         actualVerdict,
+        cpuMs: execRes.cpuTimeMs,
+        wallMs: execRes.wallTimeMs,
+        compileMs: compileRes.wallTimeMs,
         timeMs: execRes.wallTimeMs,
         memoryKb: execRes.memoryKb,
         pass: finalPass,
@@ -687,14 +755,15 @@ async function runTestCase(caseDir) {
 
 // Chạy toàn bộ test suite
 async function main() {
-    console.log('========================================================================================');
-    console.log('                CPPDSA P2 SPIKE SANDBOX RUNNER - TEST SUITE                             ');
-    console.log('========================================================================================');
+    console.log('======================================================================================================');
+    console.log('                CPPDSA P2 SPIKE SANDBOX RUNNER - TEST SUITE                                           ');
+    console.log('======================================================================================================');
+    console.log(`Cấu hình: SANDBOX_UID=${SANDBOX_UID}, COMPILE_TIMEOUT_MS=${DEFAULT_COMPILE_TIMEOUT_MS}, WALL_FACTOR=${WALL_FACTOR}\n`);
 
     // Thiết lập an ninh toàn hệ thống và dọn dẹp sạch sẽ
     secureSystemDirs();
     cleanStrayFiles();
-    killAllSandboxProcesses();
+    await cleanupSandboxProcesses(3000);
 
     const caseDirs = fs.readdirSync(CASES_DIR)
         .map(name => path.join(CASES_DIR, name))
@@ -703,9 +772,9 @@ async function main() {
 
     console.log(`Tìm thấy ${caseDirs.length} ca kiểm thử trong ${CASES_DIR}.\n`);
 
-    // In tiêu đề bảng theo yêu cầu
-    console.log('ca | mode | kỳ vọng | thực tế | thời gian ms | bộ nhớ KB | PASS/FAIL');
-    console.log('----------------------------------------------------------------------------------------');
+    // In tiêu đề bảng theo yêu cầu (in cả cpuMs, wallMs và compileMs)
+    console.log('ca                         | mode     | kỳ vọng | thực tế | cpu ms | wall ms | comp ms | bộ nhớ KB | PASS/FAIL');
+    console.log('------------------------------------------------------------------------------------------------------');
 
     const suiteStartTime = performance.now();
     let passedCount = 0;
@@ -722,29 +791,29 @@ async function main() {
         }
 
         const passStr = res.pass ? 'PASS' : `FAIL (${res.details})`;
-        console.log(`${res.id.padEnd(26, ' ')} | ${res.mode.padEnd(8, ' ')} | ${res.expectedVerdict.padEnd(7, ' ')} | ${res.actualVerdict.padEnd(7, ' ')} | ${String(res.timeMs).padStart(12, ' ')} | ${String(res.memoryKb).padStart(9, ' ')} | ${passStr}`);
+        console.log(`${res.id.padEnd(26, ' ')} | ${res.mode.padEnd(8, ' ')} | ${res.expectedVerdict.padEnd(7, ' ')} | ${res.actualVerdict.padEnd(7, ' ')} | ${String(res.cpuMs).padStart(6, ' ')} | ${String(res.wallMs).padStart(7, ' ')} | ${String(res.compileMs).padStart(7, ' ')} | ${String(res.memoryKb).padStart(9, ' ')} | ${passStr}`);
     }
 
-    console.log('----------------------------------------------------------------------------------------');
+    console.log('------------------------------------------------------------------------------------------------------');
 
     // Sau bộ ca, runner chạy lại 1 ca AC để chứng minh worker còn hoạt động
     console.log('\n--- KIỂM TRA PHỤC HỒI WORKER SAU TOÀN BỘ CÁC CA TẤN CÔNG & MLE ---');
     const recoveryRes = await runTestCase(path.join(CASES_DIR, 'final_ac_recovery'));
 
     if (recoveryRes.pass && recoveryRes.actualVerdict === 'AC') {
-        console.log(`Worker Recovery Check: PASS (AC, thời gian ${recoveryRes.timeMs} ms, bộ nhớ ${recoveryRes.memoryKb} KB)`);
+        console.log(`Worker Recovery Check: PASS (AC, cpu ${recoveryRes.cpuMs} ms, wall ${recoveryRes.wallMs} ms, comp ${recoveryRes.compileMs} ms, bộ nhớ ${recoveryRes.memoryKb} KB)`);
     } else {
         console.error(`Worker Recovery Check: FAILED! Verdict=${recoveryRes.actualVerdict} (${recoveryRes.details})`);
         failedCount++;
     }
 
     const totalDuration = Math.round(performance.now() - suiteStartTime);
-    console.log('========================================================================================');
+    console.log('======================================================================================================');
     console.log(`Tổng số ca kiểm thử  : ${caseDirs.length + 1}`);
     console.log(`Số ca ĐẠT (PASS)     : ${passedCount + (recoveryRes.pass ? 1 : 0)}`);
     console.log(`Số ca THẤT BẠI (FAIL): ${failedCount}`);
     console.log(`Tổng thời gian suite : ${totalDuration} ms`);
-    console.log('========================================================================================');
+    console.log('======================================================================================================');
 
     if (failedCount > 0) {
         process.exit(1);

@@ -104,6 +104,27 @@ function runProbe() {
     }
 }
 
+function measureBitsStdCppCompileTime() {
+    const probeSrc = `/tmp/probe_bits_stdcxx_${Date.now()}.cpp`;
+    const probeBin = `/tmp/probe_bits_stdcxx_${Date.now()}.bin`;
+    try {
+        fs.writeFileSync(probeSrc, '#include <bits/stdc++.h>\nint main(){ std::cout << "ok\\n"; return 0; }\n', 'utf-8');
+        const start = performance.now();
+        execFileSync('/usr/bin/g++', ['-std=c++17', '-O2', probeSrc, '-o', probeBin], {
+            timeout: 60000,
+            encoding: 'utf-8'
+        });
+        const durationMs = Math.round(performance.now() - start);
+        return durationMs;
+    } catch (err) {
+        console.error('Lỗi khi biên dịch probe bits/stdc++.h:', err.message);
+        return -1;
+    } finally {
+        try { fs.unlinkSync(probeSrc); } catch (e) {}
+        try { fs.unlinkSync(probeBin); } catch (e) {}
+    }
+}
+
 function sendJson(res, statusCode, data) {
     const body = JSON.stringify(data);
     res.writeHead(statusCode, {
@@ -145,6 +166,7 @@ const server = http.createServer((req, res) => {
             const probeResult = runProbe();
             const cgroupLimit = getCgroupMemoryLimit();
             const sandboxProcCount = getSandboxProcessCount(SANDBOX_UID);
+            const compileBitsMs = measureBitsStdCppCompileTime();
 
             const data = {
                 uname,
@@ -157,6 +179,9 @@ const server = http.createServer((req, res) => {
                 sandboxUid: SANDBOX_UID,
                 sandboxProcCount,
                 sandboxProcessesCount: sandboxProcCount,
+                compile_bits_stdcxx_ms: compileBitsMs,
+                compileBitsStdcxxMs: compileBitsMs,
+                compileTimeMs: compileBitsMs,
                 Seccomp: procStatus.Seccomp || 'unknown',
                 NoNewPrivs: procStatus.NoNewPrivs || 'unknown',
                 CapEff: procStatus.CapEff || 'unknown',
@@ -191,12 +216,13 @@ const server = http.createServer((req, res) => {
                 stderrBuf += chunk.toString();
             });
 
-            // Hard timeout 5 minutes
+            // Hard timeout for suite (default 10 minutes)
+            const suiteTimeoutMs = parseInt(process.env.SUITE_TIMEOUT_MS || '600000', 10);
             const timer = setTimeout(() => {
                 try {
                     child.kill('SIGKILL');
                 } catch (e) {}
-            }, 5 * 60 * 1000);
+            }, suiteTimeoutMs);
 
             child.on('close', code => {
                 clearTimeout(timer);

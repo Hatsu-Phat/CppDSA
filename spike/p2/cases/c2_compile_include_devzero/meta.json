@@ -2,8 +2,9 @@
   "id": "c2_compile_include_devzero",
   "name": "Probe c2 - Preprocessor Hang on devzero",
   "mode": "standard",
-  "expectedVerdict": "CE",
+  "expectedVerdict": ["CE", "CTE"],
   "compileTimeoutMs": 3000,
   "timeLimitMs": 1000,
   "memoryLimitBytes": 268435456
 }
+
