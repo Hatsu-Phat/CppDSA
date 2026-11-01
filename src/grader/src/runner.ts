@@ -168,6 +168,18 @@ export async function runTest(
       }
     }, wallDeadlineMs + 500);
 
+    child.on('error', () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(hardDeadlineTimer);
+        if (killFallbackTimer) clearTimeout(killFallbackTimer);
+        if (oleFallbackTimer) clearTimeout(oleFallbackTimer);
+        const wallTime = Math.round(performance.now() - runStart);
+        resolve({ code: 1, signal: null, wallTimeMs: wallTime });
+      }
+    });
+
     child.on('close', (code, signal) => {
       if (!settled) {
         settled = true;

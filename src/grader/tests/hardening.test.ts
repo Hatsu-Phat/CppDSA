@@ -13,11 +13,14 @@ describe('Grader Hardening & Resource Limiting Tests', () => {
 
     fs.writeFileSync(srcFile, '#include <iostream>\nint main() { return 0; }');
 
-    // Very short timeout (1ms) to trigger compile timeout
+    const fakeLauncher = path.join(tmpDir, 'fake_launcher');
+    fs.writeFileSync(fakeLauncher, '#!/bin/sh\nsleep 2\n');
+    fs.chmodSync(fakeLauncher, 0o755);
+
     const res = await compileCpp(tmpDir, [srcFile], binFile, {
       sandboxUid: 0,
-      launcherPath: '/nonexistent/launcher',
-      timeoutMs: 1,
+      launcherPath: fakeLauncher,
+      timeoutMs: 50,
     });
 
     expect(res.success).toBe(false);
@@ -71,28 +74,20 @@ describe('Grader Hardening & Resource Limiting Tests', () => {
 
   it('runner verdict is TLE when wall deadline is exceeded (catching sleep)', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-runner-sleep-'));
-    const srcFile = path.join(tmpDir, 'sleep.cpp');
     const binFile = path.join(tmpDir, 'sleep_bin');
 
-    fs.writeFileSync(srcFile, '#include <unistd.h>\nint main() { sleep(5); return 0; }\n');
+    fs.writeFileSync(binFile, '#!/bin/sh\nsleep 5\nexit 0\n');
+    fs.chmodSync(binFile, 0o755);
 
-    const compileRes = await compileCpp(tmpDir, [srcFile], binFile, {
+    const runRes = await runTest(tmpDir, binFile, '', '', {
       sandboxUid: 0,
       launcherPath: '/nonexistent/launcher',
-      timeoutMs: 10000,
+      timeLimitMs: 200,
+      memoryLimitMb: 128,
+      graderWallFactor: 2, // wall deadline = 200 * 2 + 1000 = 1400ms
     });
 
-    if (compileRes.success && fs.existsSync(binFile)) {
-      const runRes = await runTest(tmpDir, binFile, '', '', {
-        sandboxUid: 0,
-        launcherPath: '/nonexistent/launcher',
-        timeLimitMs: 200,
-        memoryLimitMb: 128,
-        graderWallFactor: 2, // wall deadline = 200 * 2 + 1000 = 1400ms
-      });
-
-      expect(runRes.verdict).toBe('TLE');
-    }
+    expect(runRes.verdict).toBe('TLE');
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });

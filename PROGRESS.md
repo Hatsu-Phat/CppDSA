@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P8
+CURRENT_PHASE: P9 (chờ người dùng duyệt)
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -44,3 +44,10 @@ CURRENT_PHASE: P8
 - T-0010 (P8): vòng 1 bị hủy (agy chạy `dir`); vòng 2 FAIL (PCH làm CE mọi `#include <iostream>` không ở dòng đầu, 6 ca tấn công không chạy thật, lộ token `/etc/passwd`, không có test mới, throughput tính sai, cấu hình lệch — chi tiết TEST_REPORT). Vòng 3: lượt 1 bị hủy sau 278 s (lệnh nhiều dòng ngoài allow-list); lượt 2 bị Claude Code dừng vì máy thiếu RAM — CHƯA có kết quả vòng 3. Mã vòng 1–3 nằm chưa commit trong working tree; `handoff/reports/T-0010.md` vẫn là báo cáo vòng 2.
 - Việc tiếp: khi người dùng cho phép, chạy lại `bash handoff/run-agy.sh T-0010 240m` (phản hồi vòng 3 đã ghi trong task) → nghiệm thu. Dừng trước P9.
 - 2026-11-01 (sau): người dùng cho chạy lại vòng 3 → lượt bị Claude Code dừng lần nữa vì thiếu RAM (vmmemWSL chiếm phần lớn bộ nhớ; còn ~0.4–0.9 GB trống). Agy đã xong lệnh 1–2 (grading 58/58 theo báo cáo agy, Claude CHƯA kiểm), đang ở lệnh 3–5. Compose đã down -v. Chờ người dùng xử lý RAM rồi chạy lại.
+
+## Điểm dừng 2026-11-01 (P8 xong, dừng trước P9)
+- P8 PASS (T-0010 vòng 3; các lượt 3–5 bị hủy vì `docker ps` không đối số, `$env:X=...;` trước lệnh docker, lỗi đọc script khi ổ H: mất mount). Merge `task/T-0010` → main (--no-ff). `main` local gồm P0–P8, CHƯA push (token thiếu scope `workflow`).
+- Số đo Claude (local, grader 0.15 CPU/512 MB): A 20 bài đồng thời p50 26.3 s / p95 48.4 s (✘ ngưỡng 10 s); không giới hạn CPU p95 7.2 s; B (số agy) p95 9.07 s. Local lạc quan hơn Render ~1.5–2×.
+- Docker Desktop mất mount ổ H: (`mkdir /run/desktop/mnt/host/h: file exists`) — khởi động lại Docker Desktop để sửa; tạm thời chạy lệnh bằng `tar -cf - . | docker run -i ...`.
+- Việc mở cho P9: `.env.example` chưa được Claude kiểm (bị chặn đọc `.env*`) — người dùng xem có `ENABLE_PCH`, `COMPILE_TIMEOUT_MS`, `COMPILE_CPU_LIMIT_S`, `GRADER_WALL_FACTOR` chưa; `GET /jobs/:id/metrics` của grader chưa có xác thực + Map không giới hạn; quyết định p95 burst (chấp nhận / grader nơi khác nhiều CPU hơn).
+- Chờ người dùng: cấp scope `workflow` cho token GitHub, tài khoản/tài nguyên Azure PostgreSQL, Render, Vercel; duyệt bắt đầu P9.

@@ -9,6 +9,7 @@ services:
     mem_limit: 512m
     environment:
       ENABLE_CGROUP_LOGGING: 'true'
+      ENABLE_PCH: ${ENABLE_PCH:-true}
 
   api:
     deploy:

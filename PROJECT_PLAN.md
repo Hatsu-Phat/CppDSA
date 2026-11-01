@@ -195,7 +195,7 @@ Thiết kế ứng dụng:
 | P5 | Backend API và Azure PostgreSQL | API, migration, test phân quyền | P3, P4 | XONG (PASS 2026-11-01) |
 | P6 | Giao diện giảng viên | quản lý lớp, bài, template, test ẩn, điểm | P5 | XONG (PASS 2026-11-01) |
 | P7 | Giao diện sinh viên | xem đề, nhập/nộp code hai mode, xem kết quả | P5 | XONG (PASS 2026-11-01) |
-| P8 | Gia cố: bảo mật, hiệu năng, vận hành | báo cáo bảo mật + tải + database quota | P4–P7 | ĐANG LÀM |
+| P8 | Gia cố: bảo mật, hiệu năng, vận hành | báo cáo bảo mật + tải + database quota | P4–P7 | XONG (tiêu chí 3 p95 burst trên 0.15 CPU chưa đạt; Azure CHƯA CHẠY) |
 | P9 | Deploy Vercel + Render + Azure | cấu hình deploy, DEPLOY.md | P8 | CHƯA BẮT ĐẦU |
 | P10 | Pilot và bàn giao | hướng dẫn sử dụng, FINAL_REPORT | P9 | CHƯA BẮT ĐẦU |
 

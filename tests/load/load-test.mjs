@@ -44,8 +44,7 @@ function getArg(flag, defaultValue) {
 const SCENARIO = getArg('--scenario', 'A').toUpperCase();
 const DURATION_SEC = Number(getArg('--duration', '600')); // default 10m (600s)
 
-const TEMPLATE_CODE = `#include <iostream>
-#include <bits/stdc++.h>
+const TEMPLATE_CODE = `#include <bits/stdc++.h>
 
 // STUDENT_BEGIN solve
 int solve(int a, int b);
@@ -229,7 +228,7 @@ async function main() {
 
         // Poll until COMPLETED or SYSTEM_ERROR
         let finished = null;
-        for (let p = 0; p < 180; p++) {
+        for (let p = 0; p < 360; p++) {
           await new Promise((r) => setTimeout(r, 1000));
           const pollRes = await fetch(`${API_BASE}/api/submissions/${subId}`, {
             headers: { cookie: stu.cookie },
@@ -351,7 +350,7 @@ async function main() {
         const subId = subJson.submission.id;
 
         let finished = null;
-        for (let p = 0; p < 180; p++) {
+        for (let p = 0; p < 360; p++) {
           await new Promise((r) => setTimeout(r, 1000));
           const pollRes = await fetch(`${API_BASE}/api/submissions/${subId}`, {
             headers: { cookie: item.stu.cookie },

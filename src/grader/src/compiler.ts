@@ -209,6 +209,15 @@ export async function compileCpp(
         }
       }, timeoutMs + 1000);
 
+      child.on('error', () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          clearTimeout(hardTimer);
+          resolve({ code: 1, signal: null });
+        }
+      });
+
       child.on('close', (code, signal) => {
         if (!settled) {
           settled = true;

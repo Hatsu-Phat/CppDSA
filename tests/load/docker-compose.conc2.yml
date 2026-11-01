@@ -1,0 +1,4 @@
+services:
+  grader:
+    environment:
+      GRADER_CONCURRENCY: '2'

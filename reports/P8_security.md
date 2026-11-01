@@ -18,19 +18,19 @@
 
 | ID | Tên kịch bản tấn công | File C++ | Cơ chế kiểm soát / Chặn | Verdict thực tế | Rò rỉ secret / File | Grader Health | Canary AC kế tiếp | Kết quả |
 |---|---|---|---|:---:|:---:|:---:|:---:|:---:|
-| **TC-ATK-01** | Fork bomb (tiến trình con đệ quy vô hạn) | `fork_bomb.cpp` | `RLIMIT_NPROC` (16) + Seccomp BPF (chặn clone/fork ngoài giới hạn) | **CE/RE** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-01** | Fork bomb (tiến trình con đệ quy vô hạn) | `fork_bomb.cpp` | `RLIMIT_NPROC` (16) + Seccomp BPF (chặn clone/fork ngoài giới hạn) | **WA** | KHÔNG | 200 OK | AC | **PASS** |
 | **TC-ATK-02** | Thread bomb (`std::thread` bão hòa tài nguyên) | `thread_bomb.cpp` | `RLIMIT_NPROC` + cgroup pids limit | **RE** | KHÔNG | 200 OK | AC | **PASS** |
 | **TC-ATK-03** | Memory bomb (`malloc`/`vector` vượt giới hạn) | `memory_bomb.cpp` | `RLIMIT_AS` (256MB) + cgroup memory | **MLE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-04** | Đọc file nhạy cảm (`/etc/shadow`, `/proc/*/environ`) | `read_sensitive_files.cpp` | Linux UID isolation (unprivileged uid) + file permissions 0700 | **CE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-05** | Đọc chéo thư mục job khác (`/tmp/run_*`) | `read_other_jobs.cpp` | Permissions thư mục job `0700`, UID riêng cho mỗi sandbox execution | **CE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-06** | Mở socket mạng ra ngoài (DB, API, Internet) | `network_socket.cpp` | Seccomp filter chặn `socket`, `connect`, `bind`, `listen`, `accept` | **CE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-07** | Bão lụt `stdout` (in hàng trăm MB) | `stdout_flood.cpp` | Node stream quota (max 2MB) + `RLIMIT_FSIZE` | **CE/RE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-08** | Bão lụt `stderr` | `stderr_flood.cpp` | Truncate stderr buffer tại 8KB, không nghẽn pipe | **CE/RE** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-04** | Đọc file nhạy cảm (`/etc/shadow`, `/proc/*/environ`) | `read_sensitive_files.cpp` | Linux UID isolation (unprivileged uid) + file permissions 0700 | **WA** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-05** | Đọc chéo thư mục job khác (`/tmp/run_*`) | `read_other_jobs.cpp` | Permissions thư mục job `0700`, UID riêng cho mỗi sandbox execution | **WA** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-06** | Mở socket mạng ra ngoài (DB, API, Internet) | `network_socket.cpp` | Seccomp filter chặn `socket`, `connect`, `bind`, `listen`, `accept` | **WA** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-07** | Bão lụt `stdout` (in hàng trăm MB) | `stdout_flood.cpp` | Node stream quota (max 2MB) + `RLIMIT_FSIZE` | **RE** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-08** | Bão lụt `stderr` | `stderr_flood.cpp` | Truncate stderr buffer tại 8KB, không nghẽn pipe | **TLE** | KHÔNG | 200 OK | AC | **PASS** |
 | **TC-ATK-09** | Ngủ dài (`sleep(15)` hòng chiếm giữ worker) | `long_sleep.cpp` | Wall deadline = `TL * GRADER_WALL_FACTOR + 1000ms`, kill SIGKILL sau hạn | **TLE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-10** | Tấn công kill tiến trình cha (`kill(-1, SIGKILL)`) | `kill_parent.cpp` | Unprivileged UID (chỉ kill được tiến trình cùng UID), Seccomp filter | **WA/RE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-11** | Thực thi shell `/bin/sh` (`execve`) | `exec_shell.cpp` | Seccomp BPF chặn `execve` đối với các binary ngoài whitelist/binary của job | **WA/RE** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-10** | Tấn công kill tiến trình cha (`kill(-1, SIGKILL)`) | `kill_parent.cpp` | Unprivileged UID (chỉ kill được tiến trình cùng UID), Seccomp filter | **WA** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-11** | Thực thi shell `/bin/sh` (`execve`) | `exec_shell.cpp` | Seccomp BPF chặn `execve` đối với các binary ngoài whitelist/binary của job | **WA** | KHÔNG | 200 OK | AC | **PASS** |
 | **TC-ATK-12** | Ghi đầy ổ đĩa / file tạm khổng lồ | `disk_fill.cpp` | `RLIMIT_FSIZE` (10MB) + cgroup io + tmpfs size limit | **RE** | KHÔNG | 200 OK | AC | **PASS** |
-| **TC-ATK-13** | Compile bomb (template đệ quy sâu vô tận) | `compile_bomb.cpp` | `COMPILE_TIMEOUT_MS` + `COMPILE_CPU_LIMIT_S` (RLIMIT_CPU) | **WA/CE** | KHÔNG | 200 OK | AC | **PASS** |
+| **TC-ATK-13** | Compile bomb (template đệ quy sâu vô tận) | `compile_bomb.cpp` | `COMPILE_TIMEOUT_MS` + `COMPILE_CPU_LIMIT_S` (RLIMIT_CPU) | **CE** | KHÔNG | 200 OK | AC | **PASS** |
 | **TC-ATK-14** | Đọc file lúc biên dịch (`#include "/etc/passwd"`) | `compile_read_file.cpp` | Compiler output sanitization (redact `/etc/*`, `/proc/*`, accounts) | **CE** | KHÔNG | 200 OK | AC | **PASS** |
 | **TC-ATK-15** | Mảng tĩnh khổng lồ (Object / Binary bomb) | `binary_bomb.cpp` | Compiler `RLIMIT_AS` và `RLIMIT_FSIZE` (output binary tối đa 50MB) | **CE** | KHÔNG | 200 OK | AC | **PASS** |
 
