@@ -149,3 +149,13 @@
 - Tiêu chí P3: (1) một lệnh khởi động toàn bộ ✔; (2) health 200 ✔; (3) build+lint+test pass từ clone sạch, mỗi phần ≥ 1 test ✔; làm lại theo DEV_SETUP ✔. CI trên GitHub: kiểm sau khi push.
 - Kết luận: PASS.
 
+### T-0004 vòng 1 — spike trên Render free thật — 2026-11-01
+- Local (Claude chạy lại, nhánh task/T-0004 commit 48231d0): `docker build` OK; `run-suite.mjs` 38/38; `server-selftest.mjs` 8/8 (health; 401 thiếu/sai secret; 503 khi không đặt secret; 409 khi chạy đồng thời; run-suite failed=0; bench exit 0); secret so sánh `timingSafeEqual`, không endpoint nào nhận code/lệnh từ client.
+- Render (service `cppdsa-spike`, srv-dbj88mh42hec73c9nbug, free, singapore, nhánh task/T-0004; tạo qua phiên deploy-helper):
+  - `/env-probe`: kernel 6.8.0-1057-aws; uid 0; CapEff 0x400cb; NoNewPrivs=1; Seccomp=0 (chưa filter); cgroup memory.max 536870912 (512 MiB); `setuid`/`setrlimit`/`seccomp_load` trong launcher: ok cả ba. Metrics Render: cpu_limit 0.15 CPU.
+  - `/health` (service đang thức): 305 ms, sau đó 0.13–0.29 s.
+  - `/run-suite`: kết nối đứt; Render event `server_failed` 00:18:18Z `oomKilled memoryLimit 512Mi`, tự restart 00:18:22Z → bộ ca đa tiến trình/MLE làm OOM cả container.
+  - `/bench`: exitCode 1, `execve failed: Resource temporarily unavailable` (status 127) ngay lần 1 → RLIMIT_NPROC của uid sandbox 10001 trên Render bị vượt ngay (số tiến trình theo uid có thể tính chung ngoài container) [CẦN XÁC MINH nguyên nhân chính xác].
+- Đánh giá tiêu chí P2: 5 (không privileged trên Render) ✔ — sandbox áp dụng được setuid/rlimit/seccomp; 6 (giới hạn tài nguyên chấp nhận được) ✘ hiện tại — OOM container và NPROC; 7 (bench 10 lần + cold start) CHƯA — bench không chạy được.
+- Kết luận: FAIL → T-0004 vòng 2 (uid sandbox cấu hình được dải cao; ngân sách bộ nhớ để không OOM container; đo lại bench + cold start). Đã chuyển các ràng buộc sang thiết kế P4 (T-0006). Lưu ý TL: 0.15 CPU → thời gian chạy trên Render có thể chậm hơn local nhiều lần; cần số đo bench.
+- Cold start Render (2026-11-01, sau > 15 phút không có request): `GET /health` 200 sau 13.37 s; request kế tiếp `uptimeMs` 12672, 0.18 s → instance vừa được đánh thức. Tiêu chí 7 (cold start) ✔ đo được; bench còn chờ T-0004 vòng 2.

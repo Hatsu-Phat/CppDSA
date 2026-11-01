@@ -24,3 +24,12 @@ CURRENT_PHASE: P4
 - 2026-11-01: người dùng cấp quyền tự động 6 giờ (tự giao task, kiểm thử, sang phase khi không còn lỗi). T-0003 vòng 1 FAIL (probe độc lập: runner treo bởi setsid, crash bởi stderr flood, CE lộ secret do biên dịch bằng root, đọc được expected, ghi file ngoài). Giao vòng 2.
 - 2026-11-01: T-0003 PASS (vòng 3). P2 PASS phần local; tiêu chí 5, 7 (Render) → T-0004 chờ connector Render (phiên song song) + push. Theo ủy quyền tự động, bắt đầu P3 (T-0005). Quyết định kỹ thuật P3 (Fastify, Vitest, ESLint+Prettier, node-pg-migrate, postgres:16 [CẦN XÁC MINH major Azure]) ghi trong T-0005.
 - 2026-11-01: P3 PASS (T-0005). Ghi chú vận hành: chạy agy qua bash (scratchpad/run-agy.sh, cùng prompt/model run-task.ps1) vì PowerShell thoát sớm khi agy ghi stderr; npm luôn chạy trong bản sao repo trong container (symlink NTFS). Tiếp: T-0004 (Render spike) + P4.
+
+## Điểm dừng 2026-11-01 (người dùng yêu cầu tạm dừng)
+- Nhánh hiện tại: `task/T-0006`. `main` local đã gồm P0–P3; CHƯA push được `main` lên GitHub (token thiếu scope `workflow` vì có `.github/workflows/ci.yml`) → CHỜ NGƯỜI DÙNG cấp scope.
+- P2: PASS local (T-0003). Render (T-0004 vòng 1, service `cppdsa-spike` srv-dbj88mh42hec73c9nbug, free, singapore, nhánh `task/T-0004` đã push): env-probe OK, cold start 13.37 s; FAIL ở bench (EAGAIN do RLIMIT_NPROC uid 10001) và run-suite (OOM 512Mi). Việc tiếp: giao T-0004 vòng 2 với phản hồi soạn sẵn `handoff/tasks/T-0004-r2-feedback.md` (dán vào mục "Phản hồi vòng trước" của T-0004 trên nhánh `task/T-0004`, đổi Vòng 2/3), push, nhờ phiên deploy-helper trigger_deploy, đo lại bằng `spike/p2/remote-check.mjs` (SPIKE_SECRET xem trong Render dashboard → Environment).
+- P3: PASS (T-0005), đã merge vào `main` local.
+- P4: T-0006 vòng 1 agy báo DONE (commit trên `task/T-0006`), Claude CHƯA nghiệm thu. Việc tiếp: accept-phase P4 — chạy 4 lệnh kiểm chứng trong T-0006, probe độc lập (gian lận, đồng thời, lộ test ẩn, grader chết, `--memory 512m`), kiểm agy có áp dụng phần "BỔ SUNG từ số đo Render" (SANDBOX_UID_BASE, GRADER_MEMORY_BUDGET_MB) không.
+- Sau đó: P5 → P8 tự động; dừng trước P9.
+- Cách chạy agy: `bash handoff/run-agy.sh T-XXXX <timeout>` (không dùng run-task.ps1 — PowerShell thoát sớm khi agy ghi stderr). npm luôn chạy trong bản sao repo trong container (symlink lỗi trên mount NTFS). Agy hay bị hủy nếu dùng `Get-ChildItem`/`Get-Content`… → mỗi task phải ghi cấm rõ.
+
