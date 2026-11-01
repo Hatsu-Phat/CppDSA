@@ -120,6 +120,29 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         expires: expiresAt,
       });
 
+      // Fire-and-forget background wakeup of grader
+      if (config.graderUrl) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => {
+            try {
+              controller.abort();
+            } catch {
+              // Ignore
+            }
+          }, 30000);
+          timer.unref?.();
+          fetch(`${config.graderUrl}/health`, {
+            method: 'GET',
+            signal: controller.signal,
+          })
+            .catch(() => {})
+            .finally(() => clearTimeout(timer));
+        } catch {
+          // Swallow any synchronous errors
+        }
+      }
+
       return reply.code(200).send({
         user: {
           id: user.id,

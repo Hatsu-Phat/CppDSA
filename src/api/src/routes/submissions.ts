@@ -1,12 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import pg from 'pg';
-import {
-  isValidCppIdentifier,
-  JudgeJob,
-  stitchTemplate,
-  validateTemplateRegions,
-} from '@cppdsa/shared';
+import { stitchTemplate, validateTemplateRegions } from '@cppdsa/shared';
 import { ApiConfig } from '../config.js';
+import { dispatchSubmissionToGrader } from '../services/grader-dispatch.js';
 
 export interface SubmissionRouteOptions {
   pool: pg.Pool;
@@ -148,30 +144,8 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
           });
         }
 
-        const entry = body.entry;
-        if (!entry || (entry.type !== 'function' && entry.type !== 'method')) {
-          return reply.code(400).send({
-            error: 'INVALID_ENTRY_POINT',
-            message: "Điểm vào (entry) phải có type là 'function' hoặc 'method'",
-          });
-        }
-
-        if (!isValidCppIdentifier(entry.name)) {
-          return reply.code(400).send({
-            error: 'INVALID_ENTRY_POINT',
-            message: `Tên hàm/phương thức '${entry.name}' không hợp lệ hoặc trùng từ khóa C++`,
-          });
-        }
-
-        if (entry.type === 'method' && !isValidCppIdentifier(entry.className || '')) {
-          return reply.code(400).send({
-            error: 'INVALID_ENTRY_POINT',
-            message: `Tên lớp '${entry.className}' không hợp lệ hoặc trùng từ khóa C++`,
-          });
-        }
-
         submittedCode = body.studentSource;
-        entryPointDeclaration = entry;
+        entryPointDeclaration = null;
       }
 
       // Insert submission
@@ -191,52 +165,8 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
 
       const submission = subRes.rows[0];
 
-      // Dispatch to grader
-      try {
-        const testsRes = await pool.query(
-          'SELECT id, input_data, expected_output FROM test_cases WHERE assignment_id = $1 AND is_hidden = true ORDER BY order_index ASC',
-          [assignmentId]
-        );
-
-        const job: JudgeJob = {
-          submissionId: submission.id,
-          mode: assignment.mode.toLowerCase() as 'template' | 'free',
-          language: 'cpp17',
-          timeLimitMs: assignment.time_limit_ms,
-          memoryLimitMb: assignment.memory_limit_mb,
-          compare: 'trim-trailing',
-          hiddenTests: testsRes.rows.map((t) => ({
-            id: t.id,
-            input: t.input_data,
-            expected: t.expected_output,
-          })),
-          callbackUrl: `${config.apiBaseUrl}/api/internal/grader-callback`,
-        };
-
-        if (job.mode === 'template') {
-          job.template = {
-            source: assignment.template_code,
-            regions: body.regions!,
-          };
-        } else {
-          job.free = {
-            harness: assignment.entry_point_spec?.harness || '',
-            entry: body.entry!,
-            studentSource: body.studentSource!,
-          };
-        }
-
-        await fetch(`${config.graderUrl}/jobs`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Grader-Secret': config.graderSecret,
-          },
-          body: JSON.stringify(job),
-        });
-      } catch {
-        // If grader fails or network times out, submission stays PENDING for recovery
-      }
+      // Dispatch to grader using shared helper
+      await dispatchSubmissionToGrader(pool, config, submission.id);
 
       return reply.code(201).send({
         submission: {
@@ -486,5 +416,135 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
 
     const res = await pool.query(sql, params);
     return reply.code(200).send({ submissions: res.rows });
+  });
+
+  // PATCH /api/submissions/:id/score (Lecturer owner only)
+  app.patch('/submissions/:id/score', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền sửa điểm bài nộp' });
+    }
+
+    const { id } = request.params as { id: string };
+    const subRes = await pool.query(
+      `SELECT s.*, c.lecturer_id
+       FROM submissions s
+       JOIN assignments a ON s.assignment_id = a.id
+       JOIN classrooms c ON a.classroom_id = c.id
+       WHERE s.id = $1`,
+      [id]
+    );
+
+    if (subRes.rowCount === 0) {
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài nộp' });
+    }
+    if (subRes.rows[0].lecturer_id !== user.id) {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập của bài nộp này' });
+    }
+
+    const { score } = (request.body as { score?: any }) || {};
+    if (typeof score !== 'number' || isNaN(score) || score < 0 || score > 1) {
+      return reply.code(400).send({
+        error: 'BAD_REQUEST',
+        message: 'score phải là số trong khoảng [0, 1]',
+      });
+    }
+
+    const normalizedScore = Number(score.toFixed(2));
+    const updateRes = await pool.query(
+      `UPDATE submissions
+       SET score = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [normalizedScore, id]
+    );
+
+    const row = updateRes.rows[0];
+    return reply.code(200).send({
+      submission: {
+        id: row.id,
+        assignmentId: row.assignment_id,
+        studentId: row.student_id,
+        submittedCode: row.submitted_code,
+        entryPointDeclaration: row.entry_point_declaration,
+        status: row.status,
+        score: Number(row.score),
+        passedTests: row.passed_tests,
+        totalTests: row.total_tests,
+        isLate: row.is_late,
+        compileOutput: row.compile_output,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        finishedAt: row.finished_at,
+      },
+    });
+  });
+
+  // POST /api/submissions/:id/regrade (Lecturer owner only)
+  app.post('/submissions/:id/regrade', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền chấm lại bài nộp' });
+    }
+
+    const { id } = request.params as { id: string };
+    const subRes = await pool.query(
+      `SELECT s.*, c.lecturer_id
+       FROM submissions s
+       JOIN assignments a ON s.assignment_id = a.id
+       JOIN classrooms c ON a.classroom_id = c.id
+       WHERE s.id = $1`,
+      [id]
+    );
+
+    if (subRes.rowCount === 0) {
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài nộp' });
+    }
+    if (subRes.rows[0].lecturer_id !== user.id) {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập của bài nộp này' });
+    }
+
+    // Delete existing test results
+    await pool.query('DELETE FROM submission_test_results WHERE submission_id = $1', [id]);
+
+    // Reset submission status
+    const resetRes = await pool.query(
+      `UPDATE submissions
+       SET status = 'PENDING',
+           score = 0,
+           passed_tests = 0,
+           retry_count = 0,
+           compile_output = NULL,
+           finished_at = NULL,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    // Dispatch to grader using shared helper
+    await dispatchSubmissionToGrader(pool, config, id);
+
+    return reply.code(200).send({
+      message: 'Đã gửi yêu cầu chấm lại',
+      submission: {
+        id: resetRes.rows[0].id,
+        status: resetRes.rows[0].status,
+      },
+    });
   });
 };

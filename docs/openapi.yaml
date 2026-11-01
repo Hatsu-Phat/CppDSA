@@ -426,6 +426,26 @@ paths:
         '403':
           description: Forbidden
 
+  /assignments/{id}/regrade:
+    post:
+      summary: Regrade all submissions for assignment (Lecturer owner only)
+      operationId: regradeAssignmentSubmissions
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submissions queued for regrading
+        '403':
+          description: Forbidden
+        '404':
+          description: Assignment not found
+
   /assignments/{id}/tests:
     post:
       summary: Add test case to assignment (Lecturer owner only)
@@ -481,6 +501,53 @@ paths:
       responses:
         '200':
           description: List of test cases
+        '403':
+          description: Forbidden
+
+  /assignments/{id}/tests/bulk:
+    post:
+      summary: Bulk import test cases for assignment (Lecturer owner only)
+      operationId: bulkCreateTestCases
+      tags: [TestCases]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tests]
+              properties:
+                tests:
+                  type: array
+                  items:
+                    type: object
+                    required: [inputData, expectedOutput]
+                    properties:
+                      inputData:
+                        type: string
+                      expectedOutput:
+                        type: string
+                      isHidden:
+                        type: boolean
+                        default: true
+                      isSample:
+                        type: boolean
+                        default: false
+                replace:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Test cases bulk created
+        '400':
+          description: Limit exceeded or validation error
         '403':
           description: Forbidden
 
@@ -602,6 +669,60 @@ paths:
       responses:
         '200':
           description: Submission details
+        '403':
+          description: Forbidden
+        '404':
+          description: Submission not found
+
+  /submissions/{id}/score:
+    patch:
+      summary: Update submission score (Lecturer owner only)
+      operationId: updateSubmissionScore
+      tags: [Submissions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+      responses:
+        '200':
+          description: Submission score updated
+        '400':
+          description: Score out of range [0, 1]
+        '403':
+          description: Forbidden
+        '404':
+          description: Submission not found
+
+  /submissions/{id}/regrade:
+    post:
+      summary: Regrade single submission (Lecturer owner only)
+      operationId: regradeSubmission
+      tags: [Submissions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submission queued for regrading
         '403':
           description: Forbidden
         '404':

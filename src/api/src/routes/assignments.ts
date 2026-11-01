@@ -1,8 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import pg from 'pg';
-import { isValidCppIdentifier } from '@cppdsa/shared';
 import { ApiConfig } from '../config.js';
 import { validateTemplateMarkers } from '../utils/template.js';
+import { dispatchSubmissionToGrader } from '../services/grader-dispatch.js';
 
 export interface AssignmentRouteOptions {
   pool: pg.Pool;
@@ -122,8 +122,8 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
       });
     }
 
-    const templateCode = body.templateCode || null;
-    const entryPointSpec = body.entryPointSpec || null;
+    const templateCode = mode === 'TEMPLATE' ? body.templateCode || null : null;
+    const entryPointSpec = null;
 
     if (mode === 'TEMPLATE') {
       if (!templateCode) {
@@ -146,48 +146,6 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
         return reply.code(400).send({
           error: 'INVALID_TEMPLATE_MARKERS',
           message: markerCheck.error || 'Cấu trúc marker template không hợp lệ',
-        });
-      }
-    } else {
-      if (!entryPointSpec || typeof entryPointSpec !== 'object') {
-        return reply
-          .code(400)
-          .send({ error: 'BAD_REQUEST', message: 'entryPointSpec là bắt buộc đối với mode FREE' });
-      }
-
-      const harness = entryPointSpec.harness;
-      if (!harness || typeof harness !== 'string') {
-        return reply
-          .code(400)
-          .send({ error: 'BAD_REQUEST', message: 'Harness code là bắt buộc trong entryPointSpec' });
-      }
-
-      const harnessBytes = Buffer.byteLength(harness, 'utf8');
-      if (harnessBytes > config.maxTemplateBytes) {
-        return reply.code(413).send({
-          error: 'PAYLOAD_TOO_LARGE',
-          message: `Harness vượt quá dung lượng tối đa (${config.maxTemplateBytes} bytes)`,
-        });
-      }
-
-      const entry = entryPointSpec.entry;
-      if (!entry || (entry.type !== 'function' && entry.type !== 'method')) {
-        return reply
-          .code(400)
-          .send({ error: 'BAD_REQUEST', message: "entry.type phải là 'function' hoặc 'method'" });
-      }
-
-      if (!isValidCppIdentifier(entry.name)) {
-        return reply.code(400).send({
-          error: 'BAD_REQUEST',
-          message: `Tên hàm/phương thức '${entry.name}' không hợp lệ hoặc trùng từ khóa C++`,
-        });
-      }
-
-      if (entry.type === 'method' && !isValidCppIdentifier(entry.className)) {
-        return reply.code(400).send({
-          error: 'BAD_REQUEST',
-          message: `Tên lớp '${entry.className}' không hợp lệ hoặc trùng từ khóa C++`,
         });
       }
     }
@@ -364,9 +322,17 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
       body.memoryLimitMb !== undefined ? body.memoryLimitMb : assignment.memory_limit_mb;
     const deadline = body.deadline !== undefined ? new Date(body.deadline) : assignment.deadline;
     const templateCode =
-      body.templateCode !== undefined ? body.templateCode : assignment.template_code;
+      assignment.mode === 'TEMPLATE'
+        ? body.templateCode !== undefined
+          ? body.templateCode
+          : assignment.template_code
+        : null;
     const entryPointSpec =
-      body.entryPointSpec !== undefined ? body.entryPointSpec : assignment.entry_point_spec;
+      assignment.mode === 'FREE'
+        ? null
+        : body.entryPointSpec !== undefined
+          ? body.entryPointSpec
+          : assignment.entry_point_spec;
 
     if (assignment.mode === 'TEMPLATE' && templateCode) {
       if (Buffer.byteLength(templateCode, 'utf8') > config.maxTemplateBytes) {
@@ -425,5 +391,53 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
 
     await pool.query('DELETE FROM assignments WHERE id = $1', [id]);
     return reply.code(200).send({ message: 'Đã xóa bài tập thành công' });
+  });
+
+  // POST /api/assignments/:id/regrade (Lecturer owner only)
+  app.post('/assignments/:id/regrade', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền chấm lại bài tập' });
+    }
+
+    const { id } = request.params as { id: string };
+    const { exists, isOwner } = await verifyAssignmentAccess(id, user);
+    if (!exists) {
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+    }
+    if (!isOwner) {
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+    }
+
+    const subsRes = await pool.query(
+      'SELECT id FROM submissions WHERE assignment_id = $1 ORDER BY created_at ASC',
+      [id]
+    );
+
+    if (subsRes.rowCount! > 0) {
+      await pool.query(
+        'DELETE FROM submission_test_results WHERE submission_id IN (SELECT id FROM submissions WHERE assignment_id = $1)',
+        [id]
+      );
+      await pool.query(
+        `UPDATE submissions
+         SET status = 'PENDING', score = 0, passed_tests = 0, retry_count = 0,
+             compile_output = NULL, finished_at = NULL, updated_at = NOW()
+         WHERE assignment_id = $1`,
+        [id]
+      );
+
+      // Sequentially dispatch jobs to avoid overwhelming grader (concurrency 1)
+      for (const sub of subsRes.rows) {
+        await dispatchSubmissionToGrader(pool, config, sub.id);
+      }
+    }
+
+    return reply.code(200).send({ queued: subsRes.rowCount || 0 });
   });
 };
