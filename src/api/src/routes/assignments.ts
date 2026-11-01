@@ -1,0 +1,378 @@
+import { FastifyPluginAsync } from 'fastify';
+import pg from 'pg';
+import { isValidCppIdentifier } from '@cppdsa/shared';
+import { ApiConfig } from '../config.js';
+import { validateTemplateMarkers } from '../utils/template.js';
+
+export interface AssignmentRouteOptions {
+  pool: pg.Pool;
+  config: ApiConfig;
+}
+
+export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = async (
+  app,
+  options
+) => {
+  const { pool, config } = options;
+
+  // Helper to verify classroom ownership
+  const verifyClassroomOwner = async (classroomId: string, userId: string) => {
+    const res = await pool.query('SELECT lecturer_id FROM classrooms WHERE id = $1', [classroomId]);
+    if (res.rowCount === 0) return { exists: false, isOwner: false };
+    return { exists: true, isOwner: res.rows[0].lecturer_id === userId };
+  };
+
+  // Helper to verify assignment ownership
+  const verifyAssignmentAccess = async (assignmentId: string, user: any) => {
+    const res = await pool.query(
+      `SELECT a.*, c.lecturer_id
+       FROM assignments a
+       JOIN classrooms c ON a.classroom_id = c.id
+       WHERE a.id = $1`,
+      [assignmentId]
+    );
+    if (res.rowCount === 0)
+      return { exists: false, isOwner: false, isEnrolled: false, assignment: null };
+
+    const assignment = res.rows[0];
+    const isOwner = assignment.lecturer_id === user.id;
+
+    let isEnrolled = false;
+    if (user.role === 'STUDENT') {
+      const enrollRes = await pool.query(
+        'SELECT id FROM classroom_enrollments WHERE classroom_id = $1 AND student_id = $2',
+        [assignment.classroom_id, user.id]
+      );
+      isEnrolled = enrollRes.rowCount! > 0;
+    }
+
+    return { exists: true, isOwner, isEnrolled, assignment };
+  };
+
+  // POST /api/classrooms/:id/assignments (Lecturer owner only)
+  app.post('/classrooms/:id/assignments', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền tạo bài tập' });
+    }
+
+    const { id: classroomId } = request.params as { id: string };
+    const { exists, isOwner } = await verifyClassroomOwner(classroomId, user.id);
+    if (!exists)
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy lớp học' });
+    if (!isOwner)
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu lớp học này' });
+
+    const body = request.body as {
+      title?: string;
+      description?: string;
+      mode?: string;
+      timeLimitMs?: number;
+      memoryLimitMb?: number;
+      deadline?: string;
+      templateCode?: string;
+      entryPointSpec?: any;
+    };
+
+    if (!body.title || typeof body.title !== 'string' || body.title.trim().length === 0) {
+      return reply.code(400).send({ error: 'BAD_REQUEST', message: 'Tiêu đề bài tập là bắt buộc' });
+    }
+
+    const mode = (body.mode || '').toUpperCase();
+    if (mode !== 'TEMPLATE' && mode !== 'FREE') {
+      return reply
+        .code(400)
+        .send({ error: 'BAD_REQUEST', message: "Chế độ bài tập phải là 'TEMPLATE' hoặc 'FREE'" });
+    }
+
+    if (!body.deadline || isNaN(new Date(body.deadline).getTime())) {
+      return reply
+        .code(400)
+        .send({ error: 'BAD_REQUEST', message: 'Hạn nộp (deadline) không hợp lệ' });
+    }
+
+    const timeLimitMs = Number(body.timeLimitMs || 1000);
+    const memoryLimitMb = Number(body.memoryLimitMb || 256);
+
+    const templateCode = body.templateCode || null;
+    const entryPointSpec = body.entryPointSpec || null;
+
+    if (mode === 'TEMPLATE') {
+      if (!templateCode) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'Template code là bắt buộc đối với mode TEMPLATE',
+        });
+      }
+
+      const byteLen = Buffer.byteLength(templateCode, 'utf8');
+      if (byteLen > config.maxTemplateBytes) {
+        return reply.code(413).send({
+          error: 'PAYLOAD_TOO_LARGE',
+          message: `Mã template vượt quá dung lượng tối đa (${config.maxTemplateBytes} bytes)`,
+        });
+      }
+
+      const markerCheck = validateTemplateMarkers(templateCode);
+      if (!markerCheck.valid) {
+        return reply.code(400).send({
+          error: 'INVALID_TEMPLATE_MARKERS',
+          message: markerCheck.error || 'Cấu trúc marker template không hợp lệ',
+        });
+      }
+    } else {
+      if (!entryPointSpec || typeof entryPointSpec !== 'object') {
+        return reply
+          .code(400)
+          .send({ error: 'BAD_REQUEST', message: 'entryPointSpec là bắt buộc đối với mode FREE' });
+      }
+
+      const harness = entryPointSpec.harness;
+      if (!harness || typeof harness !== 'string') {
+        return reply
+          .code(400)
+          .send({ error: 'BAD_REQUEST', message: 'Harness code là bắt buộc trong entryPointSpec' });
+      }
+
+      const harnessBytes = Buffer.byteLength(harness, 'utf8');
+      if (harnessBytes > config.maxTemplateBytes) {
+        return reply.code(413).send({
+          error: 'PAYLOAD_TOO_LARGE',
+          message: `Harness vượt quá dung lượng tối đa (${config.maxTemplateBytes} bytes)`,
+        });
+      }
+
+      const entry = entryPointSpec.entry;
+      if (!entry || (entry.type !== 'function' && entry.type !== 'method')) {
+        return reply
+          .code(400)
+          .send({ error: 'BAD_REQUEST', message: "entry.type phải là 'function' hoặc 'method'" });
+      }
+
+      if (!isValidCppIdentifier(entry.name)) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: `Tên hàm/phương thức '${entry.name}' không hợp lệ hoặc trùng từ khóa C++`,
+        });
+      }
+
+      if (entry.type === 'method' && !isValidCppIdentifier(entry.className)) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: `Tên lớp '${entry.className}' không hợp lệ hoặc trùng từ khóa C++`,
+        });
+      }
+    }
+
+    const insertRes = await pool.query(
+      `INSERT INTO assignments (classroom_id, title, description, mode, time_limit_ms, memory_limit_mb, deadline, template_code, entry_point_spec)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        classroomId,
+        body.title.trim(),
+        body.description ? body.description.trim() : null,
+        mode,
+        timeLimitMs,
+        memoryLimitMb,
+        new Date(body.deadline),
+        templateCode,
+        entryPointSpec ? JSON.stringify(entryPointSpec) : null,
+      ]
+    );
+
+    return reply.code(201).send({ assignment: insertRes.rows[0] });
+  });
+
+  // GET /api/classrooms/:id/assignments (Lecturer owner or Enrolled student)
+  app.get('/classrooms/:id/assignments', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    const { id: classroomId } = request.params as { id: string };
+
+    const classRes = await pool.query('SELECT lecturer_id FROM classrooms WHERE id = $1', [
+      classroomId,
+    ]);
+    if (classRes.rowCount === 0)
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy lớp học' });
+
+    if (user.role === 'LECTURER') {
+      if (classRes.rows[0].lecturer_id !== user.id) {
+        return reply
+          .code(403)
+          .send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu lớp học này' });
+      }
+
+      const res = await pool.query(
+        'SELECT * FROM assignments WHERE classroom_id = $1 ORDER BY created_at DESC',
+        [classroomId]
+      );
+      return reply.code(200).send({ assignments: res.rows });
+    } else {
+      const enrollRes = await pool.query(
+        'SELECT id FROM classroom_enrollments WHERE classroom_id = $1 AND student_id = $2',
+        [classroomId, user.id]
+      );
+      if (enrollRes.rowCount === 0) {
+        return reply
+          .code(403)
+          .send({ error: 'FORBIDDEN', message: 'Bạn chưa được ghi danh vào lớp học này' });
+      }
+
+      // Query assignments with student's best score
+      const res = await pool.query(
+        `SELECT a.id, a.classroom_id, a.title, a.description, a.mode, a.time_limit_ms, a.memory_limit_mb,
+                a.deadline, a.created_at,
+                MAX(CASE WHEN s.status = 'COMPLETED' AND s.is_late = false THEN s.score ELSE NULL END) as "bestScore",
+                COUNT(s.id) as "submissionCount"
+         FROM assignments a
+         LEFT JOIN submissions s ON a.id = s.assignment_id AND s.student_id = $1
+         WHERE a.classroom_id = $2
+         GROUP BY a.id
+         ORDER BY a.created_at DESC`,
+        [user.id, classroomId]
+      );
+
+      return reply.code(200).send({ assignments: res.rows });
+    }
+  });
+
+  // GET /api/assignments/:id
+  app.get('/assignments/:id', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    const { id } = request.params as { id: string };
+
+    const { exists, isOwner, isEnrolled, assignment } = await verifyAssignmentAccess(id, user);
+    if (!exists)
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+
+    if (user.role === 'LECTURER' && !isOwner) {
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+    }
+    if (user.role === 'STUDENT' && !isEnrolled) {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Bạn không có quyền truy cập bài tập này' });
+    }
+
+    // Public / sample test cases only!
+    const sampleTestsRes = await pool.query(
+      `SELECT id, order_index, input_data, expected_output, is_sample
+       FROM test_cases
+       WHERE assignment_id = $1 AND (is_hidden = false OR is_sample = true)
+       ORDER BY order_index ASC`,
+      [id]
+    );
+
+    const result: any = {
+      ...assignment,
+      sampleTests: sampleTestsRes.rows,
+    };
+
+    // Remove internal lecturer_id before sending
+    delete result.lecturer_id;
+
+    return reply.code(200).send({ assignment: result });
+  });
+
+  // PUT /api/assignments/:id (Lecturer owner only)
+  app.put('/assignments/:id', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền cập nhật bài tập' });
+    }
+
+    const { id } = request.params as { id: string };
+    const { exists, isOwner, assignment } = await verifyAssignmentAccess(id, user);
+    if (!exists)
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+    if (!isOwner)
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+
+    const body = request.body as any;
+    const title = body.title !== undefined ? body.title : assignment.title;
+    const description = body.description !== undefined ? body.description : assignment.description;
+    const timeLimitMs =
+      body.timeLimitMs !== undefined ? Number(body.timeLimitMs) : assignment.time_limit_ms;
+    const memoryLimitMb =
+      body.memoryLimitMb !== undefined ? Number(body.memoryLimitMb) : assignment.memory_limit_mb;
+    const deadline = body.deadline !== undefined ? new Date(body.deadline) : assignment.deadline;
+    const templateCode =
+      body.templateCode !== undefined ? body.templateCode : assignment.template_code;
+    const entryPointSpec =
+      body.entryPointSpec !== undefined ? body.entryPointSpec : assignment.entry_point_spec;
+
+    if (assignment.mode === 'TEMPLATE' && templateCode) {
+      if (Buffer.byteLength(templateCode, 'utf8') > config.maxTemplateBytes) {
+        return reply.code(413).send({
+          error: 'PAYLOAD_TOO_LARGE',
+          message: `Mã template vượt quá dung lượng tối đa (${config.maxTemplateBytes} bytes)`,
+        });
+      }
+      const markerCheck = validateTemplateMarkers(templateCode);
+      if (!markerCheck.valid) {
+        return reply.code(400).send({
+          error: 'INVALID_TEMPLATE_MARKERS',
+          message: markerCheck.error || 'Cấu trúc marker template không hợp lệ',
+        });
+      }
+    }
+
+    const updated = await pool.query(
+      `UPDATE assignments
+       SET title = $1, description = $2, time_limit_ms = $3, memory_limit_mb = $4,
+           deadline = $5, template_code = $6, entry_point_spec = $7, updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [
+        title,
+        description,
+        timeLimitMs,
+        memoryLimitMb,
+        deadline,
+        templateCode,
+        entryPointSpec ? JSON.stringify(entryPointSpec) : null,
+        id,
+      ]
+    );
+
+    return reply.code(200).send({ assignment: updated.rows[0] });
+  });
+
+  // DELETE /api/assignments/:id (Lecturer owner only)
+  app.delete('/assignments/:id', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền xóa bài tập' });
+    }
+
+    const { id } = request.params as { id: string };
+    const { exists, isOwner } = await verifyAssignmentAccess(id, user);
+    if (!exists)
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+    if (!isOwner)
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+
+    await pool.query('DELETE FROM assignments WHERE id = $1', [id]);
+    return reply.code(200).send({ message: 'Đã xóa bài tập thành công' });
+  });
+};

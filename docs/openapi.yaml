@@ -1,0 +1,699 @@
+openapi: 3.0.3
+info:
+  title: CppDSA Backend API
+  description: Backend API for CppDSA Online Judge System (Fastify + PostgreSQL).
+  version: 0.1.0
+servers:
+  - url: /api
+    description: Base API path
+paths:
+  /auth/login:
+    post:
+      summary: User login
+      operationId: login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful, sid cookie set
+        '401':
+          description: Invalid credentials
+        '429':
+          description: Too many login attempts
+
+  /auth/logout:
+    post:
+      summary: User logout
+      operationId: logout
+      tags: [Auth]
+      responses:
+        '200':
+          description: Logged out successfully
+
+  /auth/me:
+    get:
+      summary: Get current authenticated user
+      operationId: getMe
+      tags: [Auth]
+      responses:
+        '200':
+          description: Current user information
+        '401':
+          description: Unauthenticated
+
+  /auth/change-password:
+    post:
+      summary: Change password
+      operationId: changePassword
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oldPassword, newPassword]
+              properties:
+                oldPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 6
+      responses:
+        '200':
+          description: Password changed successfully
+        '400':
+          description: Invalid password or old password incorrect
+        '401':
+          description: Unauthenticated
+
+  /classrooms:
+    post:
+      summary: Create classroom (Lecturer only)
+      operationId: createClassroom
+      tags: [Classrooms]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Classroom created
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Forbidden (Not a lecturer)
+    get:
+      summary: List classrooms (Lecturer: owned, Student: enrolled)
+      operationId: listClassrooms
+      tags: [Classrooms]
+      responses:
+        '200':
+          description: List of classrooms
+        '401':
+          description: Unauthenticated
+
+  /classrooms/{id}:
+    get:
+      summary: Get classroom details
+      operationId: getClassroom
+      tags: [Classrooms]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Classroom details
+        '403':
+          description: Forbidden
+        '404':
+          description: Classroom not found
+    put:
+      summary: Update classroom (Lecturer owner only)
+      operationId: updateClassroom
+      tags: [Classrooms]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Classroom updated
+        '403':
+          description: Forbidden
+        '404':
+          description: Classroom not found
+    delete:
+      summary: Delete classroom (Lecturer owner only)
+      operationId: deleteClassroom
+      tags: [Classrooms]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Classroom deleted
+        '403':
+          description: Forbidden
+        '404':
+          description: Classroom not found
+
+  /classrooms/{id}/students/import:
+    post:
+      summary: Import students CSV (Lecturer owner only)
+      operationId: importStudentsCsv
+      tags: [Classrooms]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv]
+              properties:
+                csv:
+                  type: string
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Import results with per-row status
+        '400':
+          description: CSV exceeds limit or invalid format
+        '403':
+          description: Forbidden
+
+  /classrooms/{id}/students:
+    get:
+      summary: List students in classroom (Lecturer owner only)
+      operationId: listClassroomStudents
+      tags: [Classrooms]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of enrolled students
+        '403':
+          description: Forbidden
+
+  /classrooms/{id}/students/{studentId}/reset-password:
+    post:
+      summary: Reset student password (Lecturer owner only)
+      operationId: resetStudentPassword
+      tags: [Classrooms]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Temporary password generated
+        '403':
+          description: Forbidden
+        '404':
+          description: Student not found
+
+  /classrooms/{id}/assignments:
+    post:
+      summary: Create assignment (Lecturer owner only)
+      operationId: createAssignment
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, mode, deadline]
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                mode:
+                  type: string
+                  enum: [TEMPLATE, FREE]
+                timeLimitMs:
+                  type: integer
+                  default: 1000
+                memoryLimitMb:
+                  type: integer
+                  default: 256
+                deadline:
+                  type: string
+                  format: date-time
+                templateCode:
+                  type: string
+                entryPointSpec:
+                  type: object
+      responses:
+        '201':
+          description: Assignment created
+        '400':
+          description: Validation error (invalid template marker, bad entry point, etc.)
+        '413':
+          description: Template code exceeds 64 KB
+        '403':
+          description: Forbidden
+    get:
+      summary: List assignments in classroom
+      operationId: listAssignments
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of assignments
+        '403':
+          description: Forbidden
+
+  /assignments/{id}:
+    get:
+      summary: Get assignment details (Students do not receive hidden tests)
+      operationId: getAssignment
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Assignment details
+        '403':
+          description: Forbidden
+        '404':
+          description: Assignment not found
+    put:
+      summary: Update assignment (Lecturer owner only)
+      operationId: updateAssignment
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Assignment updated
+        '400':
+          description: Validation error
+        '403':
+          description: Forbidden
+    delete:
+      summary: Delete assignment (Lecturer owner only)
+      operationId: deleteAssignment
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Assignment deleted
+        '403':
+          description: Forbidden
+
+  /assignments/{id}/tests:
+    post:
+      summary: Add test case to assignment (Lecturer owner only)
+      operationId: createTestCase
+      tags: [TestCases]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inputData, expectedOutput]
+              properties:
+                inputData:
+                  type: string
+                expectedOutput:
+                  type: string
+                isHidden:
+                  type: boolean
+                  default: true
+                isSample:
+                  type: boolean
+                  default: false
+                orderIndex:
+                  type: integer
+      responses:
+        '201':
+          description: Test case created
+        '400':
+          description: Limit exceeded (>50 hidden tests)
+        '413':
+          description: Input or expected output exceeds 1 MB
+        '403':
+          description: Forbidden
+    get:
+      summary: List all test cases for assignment (Lecturer owner only)
+      operationId: listTestCases
+      tags: [TestCases]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of test cases
+        '403':
+          description: Forbidden
+
+  /tests/{id}:
+    put:
+      summary: Update test case (Lecturer owner only)
+      operationId: updateTestCase
+      tags: [TestCases]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Test case updated
+        '403':
+          description: Forbidden
+    delete:
+      summary: Delete test case (Lecturer owner only)
+      operationId: deleteTestCase
+      tags: [TestCases]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Test case deleted
+        '403':
+          description: Forbidden
+
+  /assignments/{id}/submissions:
+    post:
+      summary: Submit solution for assignment (Enrolled student only)
+      operationId: submitAssignment
+      tags: [Submissions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                regions:
+                  type: object
+                  additionalProperties:
+                    type: string
+                studentSource:
+                  type: string
+                entry:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [function, method]
+                    name:
+                      type: string
+                    className:
+                      type: string
+      responses:
+        '201':
+          description: Submission created and enqueued
+        '400':
+          description: Invalid regions or invalid entry point
+        '413':
+          description: Code exceeds 64 KB
+        '429':
+          description: Rate limit exceeded (6 submissions/min)
+        '403':
+          description: Forbidden
+    get:
+      summary: List submissions for assignment
+      operationId: listAssignmentSubmissions
+      tags: [Submissions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of submissions
+        '403':
+          description: Forbidden
+
+  /submissions/{id}:
+    get:
+      summary: Get submission details (Students do not receive hidden test input/output)
+      operationId: getSubmission
+      tags: [Submissions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submission details
+        '403':
+          description: Forbidden
+        '404':
+          description: Submission not found
+
+  /classrooms/{id}/submissions:
+    get:
+      summary: List classroom submissions with filters (Lecturer owner only)
+      operationId: listClassroomSubmissions
+      tags: [Submissions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assignmentId
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: minScore
+          in: query
+          schema:
+            type: number
+        - name: maxScore
+          in: query
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Filtered list of submissions
+        '403':
+          description: Forbidden
+
+  /classrooms/{id}/grades/csv:
+    get:
+      summary: Export classroom grades as CSV (Lecturer owner only)
+      operationId: exportClassroomGradesCsv
+      tags: [Grades]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assignmentId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV grade report
+          content:
+            text/csv:
+              schema:
+                type: string
+        '403':
+          description: Forbidden
+
+  /system/warmup:
+    post:
+      summary: System warmup pinging DB and Grader (Lecturer only)
+      operationId: warmupSystem
+      tags: [System]
+      responses:
+        '200':
+          description: Status of DB and Grader components
+        '403':
+          description: Forbidden
+
+  /internal/grader-callback:
+    post:
+      summary: Internal callback endpoint for Grader results
+      operationId: graderCallback
+      tags: [Internal]
+      parameters:
+        - name: X-Grader-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submissionId, status, verdict, score, tests]
+              properties:
+                submissionId:
+                  type: string
+                status:
+                  type: string
+                  enum: [DONE, SYSTEM_ERROR]
+                verdict:
+                  type: string
+                score:
+                  type: number
+                tests:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      index:
+                        type: integer
+                      verdict:
+                        type: string
+                      timeMs:
+                        type: number
+                      memoryKb:
+                        type: number
+                compileMessage:
+                  type: string
+      responses:
+        '200':
+          description: Callback processed successfully (idempotent)
+        '401':
+          description: Invalid or missing X-Grader-Secret
+        '404':
+          description: Submission not found
+        '503':
+          description: Grader secret not configured on server

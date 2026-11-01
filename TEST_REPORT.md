@@ -181,3 +181,25 @@
 - Tiêu chí P4 1–8: ✔ cả 8.
 - Ghi chú: agy không cập nhật `handoff/reports/T-0006.md` cho vòng 2 (vẫn nội dung vòng 1) — lỗi quy trình, không ảnh hưởng sản phẩm; kết quả trên do Claude tự chạy. `/dev/shm` được chặn bằng `chmod 755` trong entrypoint (cần container chạy root — đúng trên Render theo env-probe).
 - Kết luận: PASS.
+
+### T-0004 vòng 2 — spike trên Render free thật — 2026-11-01
+- Local (Claude, commit 479b0c0, `--memory 512m`): build exit 0; `run-suite.mjs` exit 0, 0 FAIL (ca nhiều tiến trình bị hạ ML 256→96 MB, NPROC 20→4 theo budget 384); `server-selftest.mjs` exit 0; `bench.mjs` exit 0.
+- Render (push `task/T-0004`, deploy dep-dbjab3h2tl4s73ecteug live 02:36:57Z; Claude đặt SPIKE_SECRET mới ngẫu nhiên qua Render API; `remote-check.mjs` từ node:22 container):
+  - `/health` 200 trong 1375 ms (service đang thức, uptimeMs 285546 → KHÔNG phải số đo cold start; cold start giữ số đo vòng 1: 13.37 s).
+  - `/env-probe`: kernel 7.0.0-1009-aws; cgroup 512 MiB; uid 0; CapEff 0x400cb; sandbox uid 2000000000; setuid/setrlimit/seccomp_load ok; fork 5 tiến trình con ok → lỗi EAGAIN vòng 1 đã hết ✔.
+  - `/run-suite`: server KHÔNG bị OOM (trả 200 sau 151 s) ✔ nhưng exitCode 1, 16 pass / 22 fail. Nhóm lỗi: (a) 14 ca CE với message rỗng sau ~5.5–6.7 s → biên dịch quá thời hạn ở 0.15 CPU; (b) 7 ca "Surviving sandbox processes detected" (PID 152,160… tồn tại qua nhiều ca liên tiếp) sau TLE/fork; (c) q4_escape_setsid, q6_stderr_flood → TLE thay vì AC (deadline wall quá chặt ở 0.15 CPU); q5_check_survivors → WA.
+  - `/bench` exitCode 0: 10 lần wall mean 2128.80 ms, StdDev 33.11 ms (1.56%), spread 4.18%; CPU time mean 314.10 ms; tỉ lệ CPU/wall 0.148 (local cùng chương trình: wall ~248 ms, CPU ~239 ms, tỉ lệ 0.95).
+- Đánh giá tiêu chí P2: 5 ✔; 7 ✔ (độ lệch 1.56% ≤ 20%; cold start 13.37 s từ vòng 1); 6 ✘ một phần — giới hạn bộ nhớ/tiến trình đã ổn, nhưng thời gian biên dịch và hạn chót wall chưa phù hợp CPU 0.15, và còn tiến trình sandbox sống sót.
+- Hệ quả thiết kế (chuyển P8 tiêu chí 7, ghi vào grader): trên Render free, wall ≈ 6.8 × CPU time → TL phải tính theo CPU time (rusage/RLIMIT_CPU), hạn chót wall = hệ số × TL; thời hạn biên dịch phải ≥ vài chục giây; thông lượng chấm sẽ thấp (ước lượng cần đo ở P8).
+- Kết luận: FAIL → T-0004 vòng 3 (vòng cuối).
+- Bổ sung (Claude, 2026-11-01): grader P4 (main f83d8e1) chạy `docker run --rm --memory 512m --cpus 0.15 cppdsa-grader npm run test:grading` → `Summary: 49/50`, chỉ TC-MEM-BUDGET (kiểm theo thời gian) FAIL. Dữ liệu đầu vào cho P8 tiêu chí 7.
+
+### T-0007 vòng 1 / Phase P5 — nghiệm thu (accept-phase) — 2026-11-01
+- Claude chạy lại (nhánh task/T-0007, chưa commit của agy): lệnh 1 exit 0 (api: 18 pass, 47 integration skipped do không có DB — đúng thiết kế); lệnh 2 (compose `db` + `TEST_DATABASE_URL`, `npm test -w @cppdsa/api`) exit 0, `Tests 65 passed (65)`, 0 skipped; lệnh 3 compose: api/db/grader healthy, migration chạy khi khởi động api.
+- Probe E2E độc lập (scratchpad/e2e5.mjs; api + grader + postgres THẬT trong compose, giảng viên seed bằng `seed:lecturer`):
+  - ✔ must_change_password → 403; tạo lớp/bài template/test ẩn; sinh viên không thấy chuỗi đánh dấu test ẩn ở 6 endpoint GET; sinh viên gọi 5 endpoint giảng viên → 403; nộp đúng → COMPLETED score 1.00; nộp sai → 0.25; CE → compileOutput 1299 ký tự, không đường dẫn; SV2 đọc submission SV1 → 403; vùng thừa → 400; callback thiếu/sai secret → 401/401; CSV điểm đúng; warmup `{"db":"ok","grader":"ok"}`.
+  - ✘ Import CSV tạo tài khoản với mật khẩu tạm nhưng response chỉ có `{"successCount":2,"errorCount":0,"errors":[]}` → giảng viên không biết mật khẩu, sinh viên không đăng nhập được (AC-US-01-1).
+  - ✘ Lệch chỉ số kết quả từng test: grader gửi `tests[].index` bắt đầu từ 0 (`src/grader/src/executor.ts:134`), API (`src/api/src/routes/internal.ts:81`) hiểu là 1-based → DB: submission 4 test ẩn chỉ lưu 3 dòng `submission_test_results` (passed_tests 4/4 nhưng n_results 3), verdict test i bị gán cho test i-1. Integration test dùng mock gửi index 1-based nên không phát hiện.
+- Đánh giá test: test deadline (`integration.test.ts:929`) tự INSERT `is_late` bằng SQL → không kiểm logic tính trễ của API (gần tautology). Thiếu test biên: mã sinh viên đúng 65536 byte được nhận (chỉ có test > 65536), 50/51 hidden tests, CSV 500/501 dòng, rate limit 429.
+- Tiêu chí P5: (1) endpoint có integration test ✔ (65 test, có kiểm openapi coverage); (2) phân quyền âm tính ✔ (probe xác nhận); (3) giới hạn kích thước ✘ thiếu test biên một số giới hạn; (4) deadline/max-score ✘ test không kiểm logic API; (5) credential chỉ ở backend ✔ (chưa thấy vi phạm; test quét có sẵn). Thêm 2 lỗi chức năng ở trên.
+- Kết luận: FAIL → T-0007 vòng 2.

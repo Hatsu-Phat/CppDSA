@@ -25,8 +25,18 @@ services:
       PORT: 4000
       HOST: 0.0.0.0
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-cppdsa}
+      GRADER_URL: http://grader:4100
+      GRADER_SECRET: ${GRADER_SECRET:-dev-grader-secret}
+      API_BASE_URL: http://api:4000
+      NODE_ENV: development
     ports:
       - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))\""]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
     depends_on:
       db:
         condition: service_healthy
