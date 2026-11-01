@@ -3,7 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import SystemWarmupButton from './SystemWarmupButton';
+import { BRAND } from '@/lib/brand';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface NavbarProps {
   user?: {
@@ -31,10 +32,20 @@ export default function Navbar({ user }: NavbarProps) {
   return (
     <header className="navbar">
       <div className="navbar-brand">
-        <Link href={roleUrl} style={{ textDecoration: 'none', color: 'inherit' }}>
-          CppDSA{' '}
+        <Link
+          href={roleUrl}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            textDecoration: 'none',
+            color: 'inherit',
+          }}
+        >
+          <div className="brand-icon-box">&lt;/&gt;</div>
+          <span>{BRAND.name}</span>
           {roleLabel && (
-            <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--neutral-600)' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--text-muted)' }}>
               | {roleLabel}
             </span>
           )}
@@ -46,18 +57,25 @@ export default function Navbar({ user }: NavbarProps) {
           Danh sách lớp
         </Link>
 
-        {isLecturer && <SystemWarmupButton />}
+        <ThemeToggle />
 
         {user && (
           <div
-            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '0.5rem' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '0.25rem' }}
           >
-            <span
-              style={{ fontSize: '0.85rem', color: 'var(--neutral-700)' }}
+            <Link
+              href="/account"
+              style={{
+                fontSize: '0.85rem',
+                color: 'var(--text-main)',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
               data-testid="user-email-display"
+              title="Quản lý tài khoản"
             >
               {user.email}
-            </span>
+            </Link>
             <button
               type="button"
               className="btn btn-secondary btn-sm"

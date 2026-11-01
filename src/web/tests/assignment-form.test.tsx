@@ -16,13 +16,15 @@ describe('AssignmentForm Component', () => {
     expect(screen.getByTestId('template-mode-section')).toBeDefined();
   });
 
-  it('switches to FREE mode and renders entry point spec field', () => {
+  it('switches to FREE mode and renders notice without harness field', () => {
     render(<AssignmentForm classroomId="class-123" />);
 
     const modeSelect = screen.getByTestId('assignment-mode-select');
     fireEvent.change(modeSelect, { target: { value: 'FREE' } });
 
-    expect(screen.getByTestId('free-mode-section')).toBeDefined();
+    const freeSection = screen.getByTestId('free-mode-section');
+    expect(freeSection).toBeDefined();
+    expect(freeSection.textContent).toContain('Sinh viên nộp chương trình đầy đủ');
     expect(screen.queryByTestId('template-mode-section')).toBeNull();
   });
 

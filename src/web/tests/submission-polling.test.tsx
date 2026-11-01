@@ -44,7 +44,7 @@ describe('SubmissionPoller Component', () => {
     render(<SubmissionPoller submissionId="sub-1" pollIntervalMs={2000} onFinished={onFinished} />);
 
     // Initially PENDING
-    expect(screen.getByTestId('submission-status').textContent).toContain('PENDING');
+    expect(screen.getByTestId('submission-status').textContent).toContain('Đang chờ chấm');
 
     // 1st tick (+2s): calls fetch -> returns PENDING
     await act(async () => {
@@ -57,14 +57,14 @@ describe('SubmissionPoller Component', () => {
       vi.advanceTimersByTime(2000);
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(screen.getByTestId('submission-status').textContent).toContain('RUNNING');
+    expect(screen.getByTestId('submission-status').textContent).toContain('Đang chấm bài');
 
     // 3rd tick (+2s): calls fetch -> returns COMPLETED
     await act(async () => {
       vi.advanceTimersByTime(2000);
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(screen.getByTestId('submission-status').textContent).toContain('COMPLETED');
+    expect(screen.getByTestId('submission-status').textContent).toContain('Đã chấm xong');
     expect(onFinished).toHaveBeenCalledTimes(1);
 
     // Subsequent ticks: timer was cleared! NO more fetch calls
@@ -92,7 +92,7 @@ describe('SubmissionPoller Component', () => {
       vi.advanceTimersByTime(2000);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('submission-status').textContent).toContain('SYSTEM_ERROR');
+    expect(screen.getByTestId('submission-status').textContent).toContain('Lỗi hệ thống');
     expect(onFinished).toHaveBeenCalledTimes(1);
 
     // Subsequent ticks -> no more calls

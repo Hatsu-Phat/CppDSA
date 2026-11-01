@@ -170,22 +170,6 @@ export default function StudentClassroomDetailPage() {
                     >
                       {assignment.title}
                     </h4>
-                    <span
-                      className={`badge ${
-                        assignment.mode === 'TEMPLATE' ? 'badge-primary' : 'badge-secondary'
-                      }`}
-                      data-testid={`assignment-mode-${assignment.id}`}
-                      style={{
-                        backgroundColor:
-                          assignment.mode === 'TEMPLATE'
-                            ? 'var(--primary-light)'
-                            : 'var(--neutral-200)',
-                        color:
-                          assignment.mode === 'TEMPLATE' ? 'var(--primary)' : 'var(--neutral-700)',
-                      }}
-                    >
-                      {assignment.mode}
-                    </span>
                     {isPastDeadline && (
                       <span
                         className="badge badge-warning"

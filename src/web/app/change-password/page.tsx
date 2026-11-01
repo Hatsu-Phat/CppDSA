@@ -2,6 +2,9 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { BRAND } from '@/lib/brand';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -67,79 +70,126 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="container" style={{ maxWidth: '420px', marginTop: '5rem' }}>
-      <div className="card">
-        <h2 style={{ marginBottom: '1rem', textAlign: 'center', color: 'var(--primary)' }}>
-          Đổi mật khẩu
-        </h2>
-        <p style={{ fontSize: '0.875rem', color: 'var(--neutral-600)', marginBottom: '1.5rem' }}>
-          Bạn cần cập nhật mật khẩu mới để tiếp tục sử dụng hệ thống.
-        </p>
+    <div
+      className="bg-grid"
+      style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '1rem 1.5rem',
+        }}
+      >
+        <Link
+          href="/"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            textDecoration: 'none',
+            color: 'inherit',
+          }}
+        >
+          <div className="brand-icon-box">&lt;/&gt;</div>
+          <span style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-main)' }}>
+            {BRAND.name}
+          </span>
+        </Link>
+        <ThemeToggle />
+      </div>
 
-        {error && (
-          <div className="alert alert-danger" role="alert">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="alert alert-success" role="alert">
-            {success}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="oldPassword">
-              Mật khẩu hiện tại / Mật khẩu tạm
-            </label>
-            <input
-              id="oldPassword"
-              type="password"
-              className="form-control"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="newPassword">
-              Mật khẩu mới (tối thiểu 6 ký tự)
-            </label>
-            <input
-              id="newPassword"
-              type="password"
-              className="form-control"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="confirmPassword">
-              Xác nhận mật khẩu mới
-            </label>
-            <input
-              id="confirmPassword"
-              type="password"
-              className="form-control"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ width: '100%', marginTop: '0.5rem' }}
-            disabled={loading}
+      <div
+        className="container"
+        style={{
+          maxWidth: '420px',
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div className="card" style={{ width: '100%', padding: '2rem' }}>
+          <h2 style={{ marginBottom: '0.5rem', textAlign: 'center', color: 'var(--primary)' }}>
+            Đổi mật khẩu
+          </h2>
+          <p
+            style={{
+              fontSize: '0.875rem',
+              color: 'var(--text-muted)',
+              marginBottom: '1.5rem',
+              textAlign: 'center',
+            }}
           >
-            {loading ? 'Đang xử lý...' : 'Lưu mật khẩu mới'}
-          </button>
-        </form>
+            Bạn cần cập nhật mật khẩu mới để tiếp tục sử dụng hệ thống.
+          </p>
+
+          {error && (
+            <div className="alert alert-danger" role="alert">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="alert alert-success" role="alert">
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="oldPassword">
+                Mật khẩu hiện tại / Mật khẩu tạm
+              </label>
+              <input
+                id="oldPassword"
+                type="password"
+                className="form-control"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="newPassword">
+                Mật khẩu mới (tối thiểu 6 ký tự)
+              </label>
+              <input
+                id="newPassword"
+                type="password"
+                className="form-control"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="confirmPassword">
+                Xác nhận mật khẩu mới
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                className="form-control"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{ width: '100%', marginTop: '0.5rem' }}
+              disabled={loading}
+            >
+              {loading ? 'Đang xử lý...' : 'Lưu mật khẩu mới'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

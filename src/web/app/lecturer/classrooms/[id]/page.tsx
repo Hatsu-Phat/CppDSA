@@ -836,13 +836,22 @@ export default function ClassroomDetailPage() {
               <h3 style={{ color: 'var(--primary)' }}>
                 Chi tiết bài nộp #{selectedSubDetail.id.slice(0, 8)}
               </h3>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setSelectedSubDetail(null)}
-              >
-                ✕ Đóng
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <Link
+                  href={`/lecturer/submissions/${selectedSubDetail.id}`}
+                  className="btn btn-secondary btn-sm"
+                  data-testid="open-submission-page-link"
+                >
+                  Sửa điểm & Chấm lại →
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setSelectedSubDetail(null)}
+                >
+                  ✕ Đóng
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
