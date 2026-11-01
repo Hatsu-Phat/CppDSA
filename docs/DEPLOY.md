@@ -49,7 +49,7 @@ openssl rand -hex 32
 ## 1. Azure PostgreSQL
 
 ### 1.1 Tạo server
-Làm theo `docs/AZURE_SETUP.md` §2 (Flexible Server, **Burstable B1ms**, **32 GiB**, tắt auto-grow, tắt HA, backup 7 ngày, tắt geo-redundant, PostgreSQL **16**, region **Southeast Asia** cùng vùng Singapore với Render). Dừng lại nếu màn hình **Estimated cost** không phải 0 USD.
+Làm theo `docs/AZURE_SETUP.md` §2 (Flexible Server, **Burstable B1ms**, **32 GiB**, tắt auto-grow, tắt HA, backup 7 ngày, tắt geo-redundant, PostgreSQL **16**, region **Malaysia West** — gói Azure for Students chặn Southeast Asia bằng policy region; Malaysia West gần Render Singapore). Dừng lại nếu màn hình **Estimated cost** không phải 0 USD.
 
 ### 1.2 Mạng
 - Networking → **Public access (allowed IP addresses)**.
@@ -82,11 +82,13 @@ ALTER DEFAULT PRIVILEGES FOR ROLE cppdsa_migrator IN SCHEMA public
 
 Hai chuỗi kết nối (giữ bí mật):
 ```
-MIGRATOR_URL = postgres://cppdsa_migrator:<MIGRATOR_PASSWORD>@<server>.postgres.database.azure.com:5432/cppdsa?sslmode=require
-APP_URL      = postgres://cppdsa_app:<APP_PASSWORD>@<server>.postgres.database.azure.com:5432/cppdsa?sslmode=require
+MIGRATOR_URL = postgres://cppdsa_migrator:<MIGRATOR_PASSWORD>@<server>.postgres.database.azure.com:5432/cppdsa?sslmode=verify-full
+APP_URL      = postgres://cppdsa_app:<APP_PASSWORD>@<server>.postgres.database.azure.com:5432/cppdsa?sslmode=verify-full
 ```
 
 ### 1.4 Migrate + seed giảng viên (từ máy bạn)
+
+Trước khi migrate: Azure portal → server → **Server parameters** → `azure.extensions` → tích **PGCRYPTO** → **Save** (migration `0001` gọi `CREATE EXTENSION pgcrypto`; không cho phép thì lỗi `extension "pgcrypto" is not allow-listed`, migration tự rollback). Dùng `sslmode=verify-full` (node-pg hiện coi `require` như `verify-full` và cảnh báo sẽ đổi ở bản sau; chứng chỉ Azure xác minh thành công).
 Render free không có Shell/one-off job `[CẦN XÁC MINH]`, nên chạy từ máy qua Docker. Trong thư mục repo:
 ```bash
 docker build -t cppdsa-api -f src/api/Dockerfile .
@@ -293,4 +295,8 @@ Diễn tập rollback 1 lần trong P9 (tiêu chí P9-5): promote lại bản Ve
 
 | Ngày | Bước | Kết quả | Ghi chú / khác biệt so với hướng dẫn |
 |---|---|---|---|
+| 2026-11-02 | 1.1 Tạo server | PASS | `cppdsa`, **Malaysia West** (Southeast Asia bị policy Azure for Students chặn), B1ms, 32 GiB, HA/autogrow/geo tắt, ước tính có "Free upto 750 hours / 32 GB". Admin login do người dùng chọn. |
+| 2026-11-02 | 1.3 DB + role | PASS | Script `psql -f` (mật khẩu role đặt bằng `\password`, người dùng tự gõ). `\ddp`: `cppdsa_app=arwd` (table), `rU` (sequence) cho đối tượng do `cppdsa_migrator` tạo. Cần `GRANT cppdsa_migrator TO admin123` để chạy `ALTER DEFAULT PRIVILEGES FOR ROLE`. |
+| 2026-11-02 | 1.4 Migrate + seed | PASS | Lần 1 lỗi `pgcrypto is not allow-listed` → cho phép PGCRYPTO trong `azure.extensions` → chạy lại OK. Kiểm bằng `cppdsa_app`: 9 bảng đều đủ quyền đọc/ghi, `pgmigrations` = 2, 1 LECTURER, `ssl: true`. |
+| 2026-11-02 | 2–4 Render + firewall | PASS | `cppdsa-grader` Live (`/health` ok, `/jobs` và `/jobs/:id/metrics` không secret → 401). `cppdsa-api`: 2 lần deploy đầu lỗi `password authentication failed for user "cppdsa_app"` (mật khẩu trong `DATABASE_URL` sai/chưa mã hóa URL) → tạo lại URL bằng script mã hóa → Live: `No migrations to run!`, `/health` = `{"status":"ok","db":"ok"}`, UUID sai → 400, callback không secret → 401, header `x-ratelimit-limit: 300`. Render outbound Singapore: `74.220.52.0/24`, `74.220.60.0/24` (dùng chung với service Render khác) → 2 firewall rule Azure. |
 | | | | |
