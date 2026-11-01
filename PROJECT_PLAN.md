@@ -193,8 +193,8 @@ Thiết kế ứng dụng:
 | P3 | Khung dự án, môi trường local, CI | skeleton, docker-compose, DEV_SETUP | P1, P2 | XONG (PASS 2026-11-01) |
 | P4 | Lõi chấm bài + hàng đợi + hai mode | worker chấm template/free-mode, bộ test chuẩn | P2, P3 | XONG (PASS 2026-11-01) |
 | P5 | Backend API và Azure PostgreSQL | API, migration, test phân quyền | P3, P4 | XONG (PASS 2026-11-01) |
-| P6 | Giao diện giảng viên | quản lý lớp, bài, template, test ẩn, điểm | P5 | ĐANG LÀM |
-| P7 | Giao diện sinh viên | xem đề, nhập/nộp code hai mode, xem kết quả | P5 | CHƯA BẮT ĐẦU |
+| P6 | Giao diện giảng viên | quản lý lớp, bài, template, test ẩn, điểm | P5 | XONG (PASS 2026-11-01) |
+| P7 | Giao diện sinh viên | xem đề, nhập/nộp code hai mode, xem kết quả | P5 | ĐANG LÀM |
 | P8 | Gia cố: bảo mật, hiệu năng, vận hành | báo cáo bảo mật + tải + database quota | P4–P7 | CHƯA BẮT ĐẦU |
 | P9 | Deploy Vercel + Render + Azure | cấu hình deploy, DEPLOY.md | P8 | CHƯA BẮT ĐẦU |
 | P10 | Pilot và bàn giao | hướng dẫn sử dụng, FINAL_REPORT | P9 | CHƯA BẮT ĐẦU |

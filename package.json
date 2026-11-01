@@ -19,6 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run --workspaces --if-present test",
+    "test:e2e": "playwright test tests/e2e",
     "migrate:up": "npm run --workspace=src/api migrate:up",
     "migrate:down": "npm run --workspace=src/api migrate:down"
   },

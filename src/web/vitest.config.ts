@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@cppdsa/shared': path.resolve(__dirname, '../shared/src/index.ts'),
+      '@': path.resolve(__dirname, './'),
     },
   },
   esbuild: {

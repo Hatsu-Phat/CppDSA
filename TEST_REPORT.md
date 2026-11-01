@@ -210,3 +210,21 @@
 - Probe E2E độc lập (e2e5.mjs, grader thật): 18/18 OK — import trả `temporaryPassword` cho tài khoản mới (`status:"created"`); AC → 4 verdict AC; DB: submission AC 4/4 có 4 dòng kết quả, WA 1/4 có 4 dòng (vòng 1 chỉ 3); các kiểm tra phân quyền/leak/callback/CSV/warmup như vòng 1 đều đạt.
 - Credential: không có `postgres://`, `DATABASE_URL`, `GRADER_SECRET` trong `src/web`, `src/shared/src`. Tài liệu: `docs/API.md` (91 dòng), `docs/openapi.yaml` (745), `docs/AZURE_SETUP.md` (148, 6 mục `[CẦN XÁC MINH]`). Kiểm tra kết nối Azure staging: CHƯA CHẠY (chưa tạo tài nguyên Azure — để P9).
 - Tiêu chí P5 1–5: ✔. Kết luận: PASS.
+
+### T-0004 vòng 3 (vòng cuối) — spike trên Render free thật — 2026-11-01
+- Local (Claude, commit 0741905): build exit 0; `run-suite.mjs` `--memory 512m` 0 FAIL; `--memory 512m --cpus 0.15` (mô phỏng Render) 0 FAIL; `server-selftest.mjs` exit 0. Agy sửa 3 ca (15_tle_sleep ngủ vô hạn, q8 sleep 30 s, c2 chấp nhận CE/CTE) — hợp lý vì hạn chót wall đổi thành TL×10+1 s; không làm yếu mục tiêu ca.
+- Render (deploy dep-dbjc7l0u01pc73f22qdg live 04:46:18Z):
+  - `/env-probe`: thời gian biên dịch chương trình nhỏ `#include <bits/stdc++.h>` = 15698 ms; sandbox uid 2000000000; fork 5 ok; cgroup 512 MiB.
+  - `/run-suite`: client nhận `fetch failed` (vượt 300 s), server vẫn giữ khóa (409) → bộ 38 ca không hoàn tất trong hạn 5 phút của server vì mỗi ca biên dịch ~15 s ở 0.15 CPU. KHÔNG có số pass/fail trên Render cho vòng này.
+  - `/bench` (gọi riêng): exit 0; wall mean 2187.90 ms, StdDev 73.25 ms (3.35%), spread 11.34%; CPU mean 321.20 ms; tỉ lệ 0.147.
+- Đánh giá P2: 5 ✔, 7 ✔ (độ lệch 3.35% ≤ 20%; cold start 13.37 s), 6: cách ly bộ nhớ/tiến trình/uid hoạt động trên Render ✔ nhưng thời gian biên dịch ~15.7 s/bài ✘ so với ngưỡng p95 ≤ 10 s (REQUIREMENTS §6) khi grader chạy trên Render free.
+- Kết luận: hết 3 vòng của T-0004 → DỪNG task, báo người dùng. Rủi ro chuyển P8 (tiêu chí 3 và 7): cần giảm thời gian biên dịch (vd precompiled header, không `-O2` khi biên dịch, giới hạn header) hoặc người dùng chọn nơi chạy grader khác.
+
+### T-0008 / Phase P6 — giao diện giảng viên — nghiệm thu (accept-phase) — 2026-11-01
+- Bối cảnh: lượt agy chạy 4144 s, bị Claude Code ngắt (máy thiếu RAM) khi đang chạy lệnh kiểm chứng 2; KHÔNG có báo cáo `handoff/reports/T-0008.md` (lỗi quy trình, ghi nhận). Claude nghiệm thu trực tiếp trên mã agy để lại.
+- Phạm vi: chỉ đổi `src/web/**`, `tests/e2e/**`, `docker-compose.yml` (+`API_INTERNAL_URL` cho web), `package.json` gốc (+script `test:e2e`, +`@playwright/test` 1.64.1 — gói đã được phép), lockfile, `docs/UI.md`. Không đụng `src/api`, `src/grader`, `src/shared` ✔.
+- Lệnh 1 (node:22, lint + format:check + build + test): exit 0; web `Tests 25 passed (25)`; api `18 passed | 52 skipped`; grader `6 passed`; shared `14 passed`.
+- Lệnh 2 (`docker compose down -v` → `up -d --build` → `seed:lecturer` → Playwright 1.64.1 trên `cppdsa_default`, BASE_URL=http://web:3000): exit 0; `1 passed (9.7s)`.
+- Spec E2E kiểm đúng tiêu chí (không tautology): đăng nhập → tạo lớp → import CSV 2 SV + 1 dòng lỗi (hiển thị "Dòng 4") + mật khẩu tạm → reset mật khẩu → bài TEMPLATE (ML 256, deadline, TL) + 2 hidden tests → bài FREE + 2 hidden tests → SV nộp qua API (đúng → COMPLETED score 1; sai → < 1) → giảng viên thấy điểm 1.00/0.00, lọc, mở chi tiết verdict AC/WA → tải CSV kiểm nội dung (mã SV, email) → warmup db/grader "Sẵn sàng". Form từ chối TL âm và template thiếu `STUDENT_END`. `consoleErrors` và `pageErrors` phải rỗng.
+- Probe độc lập (Claude, `p6probe.mjs` trên compose): `/api/health` qua web (rewrite) → 200; `/api/classrooms` chưa đăng nhập qua web → 401; login sai qua web → 401; 10 bundle JS client không chứa `postgres://`, `GRADER_SECRET`, `DATABASE_URL`, `SESSION_SECRET`, `api:4000`, `localhost:4000`; env container web không có biến secret/DB. Grep `src/web`: mọi `fetch` dùng đường dẫn tương đối `/api/...`; URL nội bộ duy nhất là `API_INTERNAL_URL` phía server trong `next.config.mjs`; không dùng `NEXT_PUBLIC_*`.
+- Tiêu chí P6: (1) ✔ (2) ✔ (3) ✔ (4) ✔ (5) ✔. Kết luận: PASS (vòng 1). Ghi chú: bước "sinh viên nộp" đi qua API vì giao diện sinh viên thuộc P7.
