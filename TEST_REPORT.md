@@ -159,3 +159,18 @@
 - Đánh giá tiêu chí P2: 5 (không privileged trên Render) ✔ — sandbox áp dụng được setuid/rlimit/seccomp; 6 (giới hạn tài nguyên chấp nhận được) ✘ hiện tại — OOM container và NPROC; 7 (bench 10 lần + cold start) CHƯA — bench không chạy được.
 - Kết luận: FAIL → T-0004 vòng 2 (uid sandbox cấu hình được dải cao; ngân sách bộ nhớ để không OOM container; đo lại bench + cold start). Đã chuyển các ràng buộc sang thiết kế P4 (T-0006). Lưu ý TL: 0.15 CPU → thời gian chạy trên Render có thể chậm hơn local nhiều lần; cần số đo bench.
 - Cold start Render (2026-11-01, sau > 15 phút không có request): `GET /health` 200 sau 13.37 s; request kế tiếp `uptimeMs` 12672, 0.18 s → instance vừa được đánh thức. Tiêu chí 7 (cold start) ✔ đo được; bench còn chờ T-0004 vòng 2.
+
+### T-0006 vòng 1 / Phase P4 — nghiệm thu (accept-phase) — 2026-11-01
+- Claude chạy lại (nhánh task/T-0006, commit 988cb6d; Docker 29.8.1):
+  - Lệnh 1 (npm ci/lint/format/build/test trong node:22-bookworm): exit 0; shared 25 test, api 2, grader 5, web 2 pass. (Lần chạy đầu với `npm ci >/dev/null` exit 1, log trống; chạy lại không chặn output thì exit 0 — chưa tái hiện được.)
+  - Lệnh 2 `docker build`: exit 0. Lệnh 3 `test:grading`: exit 0, `Summary: 44/44 cases PASSED` (41 ca + đồng thời 20 job + recovery có SIGKILL + leak-check). Chạy lại với `--memory 512m`: 44/44.
+  - Lệnh 4 compose: grader `Up (healthy)`, db healthy; `down -v` exit 0.
+- Probe độc lập (scratchpad/probe.mjs, probe2.mjs; grader container `--memory 512m`, gửi job qua HTTP thật):
+  - ✔ Quét toàn bộ FS (trừ /proc/self,/sys,/dev) tìm expected ẩn của chính job và job song song: không tìm thấy (WA).
+  - ✔ Callback không chứa input/expected/actual; log grader không chứa marker (0 dòng).
+  - ✘ Env tiến trình sinh viên KHÔNG rỗng: có `PATH`, `HOME`, `LANG`, ≥ 3 biến (tiêu chí 8).
+  - ✘ `compileMessage` dài 2005 ký tự (> 2000) với 300 lỗi undefined symbol (tiêu chí 6). Không lộ đường dẫn/secret ✔.
+  - ✘ Code sinh viên ghi được `/home/sandbox10001/` (home của uid sandbox, tồn tại qua các job, uid được tái dùng) và `/dev/shm` → kênh lưu dữ liệu giữa các submission/đầy đĩa. `/tmp`, `/var/tmp`, `../`, `/run/lock` bị chặn ✔.
+  - ✘ Phần BỔ SUNG từ số đo Render chưa làm: không có `SANDBOX_UID_BASE` (uid vẫn 10001..10008 — đúng uid gây EAGAIN trên Render) và không có `GRADER_MEMORY_BUDGET_MB`; 2 job ML 256 gửi cùng lúc kết thúc cách nhau 2 ms (chạy song song, kỳ vọng tuần tự).
+- Tiêu chí P4: (1) bộ chuẩn ≥30 ca đúng 100% ✔; (2) test công khai không trong job ✔ (hợp đồng không có trường); (3) không lộ test ẩn ✔; (4) grader chết không kẹt ✔ (recovery SIGKILL); (5) 20 đồng thời không lẫn ✔; (6) ✘ 2005 ký tự; (7) gian lận không AC ✔ (11 ca + probe); (8) ✘ env không rỗng (credential DB: grader không đọc DATABASE_URL ✔).
+- Kết luận: FAIL → T-0006 vòng 2.
