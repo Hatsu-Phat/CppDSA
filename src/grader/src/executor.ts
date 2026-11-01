@@ -1,14 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import {
-  JudgeJob,
-  JudgeResult,
-  TestResult,
-  JudgeVerdict,
-  stitchTemplate,
-  generateFreeModeCode,
-} from '@cppdsa/shared';
+import { JudgeJob, JudgeResult, TestResult, JudgeVerdict, stitchTemplate } from '@cppdsa/shared';
 import { UidPool } from './uid-pool.js';
 import { GraderConfig } from './config.js';
 import { compileCpp } from './compiler.js';
@@ -72,22 +65,18 @@ export async function executeJob(
       }
       sourceFiles.push(stitchedPath);
     } else if (job.mode === 'free') {
-      if (!job.free) {
-        throw new Error('Free mode specification missing for free mode');
+      if (!job.free || typeof job.free.studentSource !== 'string') {
+        throw new Error('Free mode student source missing');
       }
-      const genRes = generateFreeModeCode(job.free);
-      if (!genRes.success || !genRes.code) {
-        throw new Error(genRes.error || 'Failed to generate free mode code');
-      }
-      const adapterPath = path.join(runDir, 'adapter.cpp');
-      fs.writeFileSync(adapterPath, genRes.code, 'utf-8');
+      const studentPath = path.join(runDir, 'solution.cpp');
+      fs.writeFileSync(studentPath, job.free.studentSource, 'utf-8');
       try {
-        fs.chownSync(adapterPath, sandboxUid, sandboxUid);
-        fs.chmodSync(adapterPath, 0o644);
+        fs.chownSync(studentPath, sandboxUid, sandboxUid);
+        fs.chmodSync(studentPath, 0o644);
       } catch {
         // Ignore
       }
-      sourceFiles.push(adapterPath);
+      sourceFiles.push(studentPath);
     } else {
       throw new Error(`Unsupported mode: ${(job as any).mode}`);
     }

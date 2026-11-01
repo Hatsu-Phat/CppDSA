@@ -120,6 +120,131 @@ export const testCaseRoutes: FastifyPluginAsync<TestCaseRouteOptions> = async (a
     return reply.code(201).send({ testCase: res.rows[0] });
   });
 
+  // POST /api/assignments/:id/tests/bulk (Lecturer owner only)
+  app.post('/assignments/:id/tests/bulk', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền thêm test case' });
+    }
+
+    const { id: assignmentId } = request.params as { id: string };
+    const { exists, isOwner } = await verifyAssignmentOwner(assignmentId, user.id);
+    if (!exists) {
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+    }
+    if (!isOwner) {
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+    }
+
+    const body = request.body as {
+      tests?: Array<{
+        inputData?: string;
+        expectedOutput?: string;
+        isHidden?: boolean;
+        isSample?: boolean;
+      }>;
+      replace?: boolean;
+    };
+
+    if (!body || !Array.isArray(body.tests)) {
+      return reply.code(400).send({
+        error: 'BAD_REQUEST',
+        message: 'tests phải là một mảng',
+      });
+    }
+
+    // Validate each test case
+    for (const t of body.tests) {
+      if (t.inputData === undefined || t.expectedOutput === undefined) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'inputData và expectedOutput là bắt buộc cho mỗi test case',
+        });
+      }
+
+      const inputBytes = Buffer.byteLength(String(t.inputData), 'utf8');
+      const expectedBytes = Buffer.byteLength(String(t.expectedOutput), 'utf8');
+      if (inputBytes > config.maxTestCaseBytes || expectedBytes > config.maxTestCaseBytes) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: `Dữ liệu test case vượt quá giới hạn tối đa (${config.maxTestCaseBytes} bytes)`,
+        });
+      }
+    }
+
+    // Check count limit
+    const replace = Boolean(body.replace);
+    if (replace) {
+      if (body.tests.length > config.maxTestCasesPerAssignment) {
+        return reply.code(400).send({
+          error: 'TOO_MANY_TEST_CASES',
+          message: `Số lượng test case vượt quá giới hạn tối đa ${config.maxTestCasesPerAssignment}`,
+        });
+      }
+    } else {
+      const countRes = await pool.query(
+        'SELECT COUNT(*) FROM test_cases WHERE assignment_id = $1',
+        [assignmentId]
+      );
+      const currentCount = Number(countRes.rows[0].count);
+      if (currentCount + body.tests.length > config.maxTestCasesPerAssignment) {
+        return reply.code(400).send({
+          error: 'TOO_MANY_TEST_CASES',
+          message: `Tổng số test case sau khi thêm (${currentCount + body.tests.length}) vượt quá giới hạn tối đa ${config.maxTestCasesPerAssignment}`,
+        });
+      }
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (replace) {
+        await client.query('DELETE FROM test_cases WHERE assignment_id = $1', [assignmentId]);
+      }
+
+      const maxOrderRes = await client.query(
+        'SELECT COALESCE(MAX(order_index), 0) as max_order FROM test_cases WHERE assignment_id = $1',
+        [assignmentId]
+      );
+      let currentOrder = Number(maxOrderRes.rows[0].max_order);
+
+      const inserted: any[] = [];
+      for (const t of body.tests) {
+        currentOrder++;
+        const isHidden = t.isHidden !== false;
+        const isSample = Boolean(t.isSample);
+        const res = await client.query(
+          `INSERT INTO test_cases (assignment_id, order_index, input_data, expected_output, is_hidden, is_sample)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            assignmentId,
+            currentOrder,
+            String(t.inputData),
+            String(t.expectedOutput),
+            isHidden,
+            isSample,
+          ]
+        );
+        inserted.push(res.rows[0]);
+      }
+
+      await client.query('COMMIT');
+      return reply.code(201).send({ testCases: inserted, count: inserted.length });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+
   // GET /api/assignments/:id/tests (Lecturer owner only)
   app.get('/assignments/:id/tests', async (request, reply) => {
     const user = request.user;

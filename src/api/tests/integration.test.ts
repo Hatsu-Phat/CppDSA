@@ -16,6 +16,7 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
   let app: ReturnType<typeof buildApp>;
   let mockGraderServer: http.Server;
   let mockGraderUrl: string;
+  let mockGraderHealthHits = 0;
   const receivedGraderJobs: any[] = [];
   const GRADER_SECRET = 'test-grader-secret-token';
 
@@ -44,6 +45,7 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
         });
         req.on('end', () => {
           if (req.url === '/health' && req.method === 'GET') {
+            mockGraderHealthHits++;
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'ok', queueLength: 0, activeJobs: 0 }));
             return;
@@ -630,16 +632,8 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     expect(resOver.json().error).toBe('PAYLOAD_TOO_LARGE');
   });
 
-  it('creates FREE mode assignment with entry point spec', async () => {
+  it('creates FREE mode assignment without entryPointSpec (T-0012)', async () => {
     const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const harness = `
-      #include <iostream>
-      int main() {
-        std::cout << CPPDSA_ENTRY(2, 3) << std::endl;
-        return 0;
-      }
-    `;
-
     const res = await app.inject({
       method: 'POST',
       url: `/api/classrooms/${classroomAId}/assignments`,
@@ -648,42 +642,36 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
         title: 'Bai 2: Free Mode Solve',
         mode: 'FREE',
         deadline,
-        entryPointSpec: {
-          harness,
-          entry: {
-            type: 'function',
-            name: 'addTwo',
-          },
-        },
       },
     });
 
     expect(res.statusCode).toBe(201);
     assignmentFreeId = res.json().assignment.id;
     expect(assignmentFreeId).toBeDefined();
+    expect(res.json().assignment.entry_point_spec).toBeNull();
   });
 
-  it('rejects FREE mode assignment when entry name is invalid C++ keyword', async () => {
+  it('creates FREE mode assignment with entryPointSpec ignored and saved as NULL (T-0012)', async () => {
     const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const res = await app.inject({
       method: 'POST',
       url: `/api/classrooms/${classroomAId}/assignments`,
       headers: { cookie: lecturerA.cookie },
       payload: {
-        title: 'Invalid Free Mode',
+        title: 'Free Mode Ignored Spec',
         mode: 'FREE',
         deadline,
         entryPointSpec: {
           harness: 'int main() {}',
           entry: {
             type: 'function',
-            name: 'class', // C++ keyword
+            name: 'class', // Ignored even if keyword
           },
         },
       },
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().message).toContain('không hợp lệ hoặc trùng từ khóa C++');
+    expect(res.statusCode).toBe(201);
+    expect(res.json().assignment.entry_point_spec).toBeNull();
   });
 
   it('[TEST_ASSIGNMENTS_LIST] lists assignments in classroom', async () => {
@@ -1643,6 +1631,309 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     });
     expect(res7.statusCode).toBe(429);
     expect(res7.json().statusCode).toBe(429);
+  });
+
+  // ==========================================
+  // T-0012: FREE MODE, SCORE UPDATE, REGRADE, BULK TESTS & WAKEUP
+  // ==========================================
+
+  it('submits FREE mode solution with only studentSource (no entry) -> 201', async () => {
+    receivedGraderJobs.length = 0;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assignmentFreeId}/submissions`,
+      headers: { cookie: student1.cookie },
+      payload: {
+        studentSource:
+          '#include <iostream>\nint main() { std::cout << 42 << std::endl; return 0; }',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const subId = res.json().submission.id;
+    expect(subId).toBeDefined();
+
+    expect(receivedGraderJobs).toHaveLength(1);
+    expect(receivedGraderJobs[0].submissionId).toBe(subId);
+    expect(receivedGraderJobs[0].mode).toBe('free');
+    expect(receivedGraderJobs[0].free.studentSource).toContain('int main()');
+  });
+
+  it('[TEST_SUBMISSIONS_UPDATE_SCORE] updates submission score (GV owner 200, score bounds 400, other GV/student 403)', async () => {
+    // 1. Valid update by Lecturer A (owner)
+    const resOk = await app.inject({
+      method: 'PATCH',
+      url: `/api/submissions/${submission1Id}/score`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { score: 0.85 },
+    });
+    expect(resOk.statusCode).toBe(200);
+    expect(resOk.json().submission.score).toBe(0.85);
+
+    const dbSub = await pool.query('SELECT score FROM submissions WHERE id = $1', [submission1Id]);
+    expect(Number(dbSub.rows[0].score)).toBe(0.85);
+
+    // 2. Out of bounds > 1 -> 400
+    const resHigh = await app.inject({
+      method: 'PATCH',
+      url: `/api/submissions/${submission1Id}/score`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { score: 1.5 },
+    });
+    expect(resHigh.statusCode).toBe(400);
+
+    // 3. Out of bounds < 0 -> 400
+    const resLow = await app.inject({
+      method: 'PATCH',
+      url: `/api/submissions/${submission1Id}/score`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { score: -0.1 },
+    });
+    expect(resLow.statusCode).toBe(400);
+
+    // 4. Other lecturer -> 403
+    const resOtherLec = await app.inject({
+      method: 'PATCH',
+      url: `/api/submissions/${submission1Id}/score`,
+      headers: { cookie: lecturerB.cookie },
+      payload: { score: 0.9 },
+    });
+    expect(resOtherLec.statusCode).toBe(403);
+
+    // 5. Student -> 403
+    const resStudent = await app.inject({
+      method: 'PATCH',
+      url: `/api/submissions/${submission1Id}/score`,
+      headers: { cookie: student1.cookie },
+      payload: { score: 1.0 },
+    });
+    expect(resStudent.statusCode).toBe(403);
+  });
+
+  it('[TEST_SUBMISSIONS_REGRADE] regrades single submission (results deleted, PENDING, mock grader received job)', async () => {
+    // Ensure submission has some test results
+    await pool.query(
+      `INSERT INTO submission_test_results (submission_id, test_case_id, verdict, execution_time_ms, memory_used_kb)
+       VALUES ($1, $2, 'AC', 10, 1024)
+       ON CONFLICT DO NOTHING`,
+      [submission1Id, hiddenTestId]
+    );
+
+    receivedGraderJobs.length = 0;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/submissions/${submission1Id}/regrade`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // Verify test results deleted
+    const countRes = await pool.query(
+      'SELECT COUNT(*) FROM submission_test_results WHERE submission_id = $1',
+      [submission1Id]
+    );
+    expect(Number(countRes.rows[0].count)).toBe(0);
+
+    // Verify status reset to PENDING and score 0
+    const subRes = await pool.query(
+      'SELECT status, score, passed_tests, retry_count, compile_output FROM submissions WHERE id = $1',
+      [submission1Id]
+    );
+    expect(subRes.rows[0].status).toBe('PENDING');
+    expect(Number(subRes.rows[0].score)).toBe(0);
+    expect(subRes.rows[0].passed_tests).toBe(0);
+    expect(subRes.rows[0].retry_count).toBe(0);
+    expect(subRes.rows[0].compile_output).toBeNull();
+
+    // Verify grader received job
+    expect(receivedGraderJobs.length).toBeGreaterThanOrEqual(1);
+    expect(receivedGraderJobs[receivedGraderJobs.length - 1].submissionId).toBe(submission1Id);
+
+    // Student -> 403
+    const resStudent = await app.inject({
+      method: 'POST',
+      url: `/api/submissions/${submission1Id}/regrade`,
+      headers: { cookie: student1.cookie },
+    });
+    expect(resStudent.statusCode).toBe(403);
+  });
+
+  it('[TEST_ASSIGNMENTS_REGRADE] regrades all assignment submissions (returns queued: n)', async () => {
+    receivedGraderJobs.length = 0;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assignmentTemplateId}/regrade`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    const queuedCount = res.json().queued;
+    expect(typeof queuedCount).toBe('number');
+    expect(queuedCount).toBeGreaterThan(0);
+    expect(receivedGraderJobs.length).toBe(queuedCount);
+
+    // Student -> 403
+    const resStudent = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assignmentTemplateId}/regrade`,
+      headers: { cookie: student1.cookie },
+    });
+    expect(resStudent.statusCode).toBe(403);
+  });
+
+  it('[TEST_CASES_BULK_CREATE] bulk imports test cases with ordering, replace, and boundaries', async () => {
+    // 1. Create a dedicated assignment for bulk test cases
+    const assignRes = await app.inject({
+      method: 'POST',
+      url: `/api/classrooms/${classroomAId}/assignments`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        title: 'Bulk Test Assignment',
+        mode: 'FREE',
+        deadline: new Date(Date.now() + 86400000).toISOString(),
+      },
+    });
+    const bulkAssignId = assignRes.json().assignment.id;
+
+    // 2. Add 3 tests in bulk -> order 1, 2, 3
+    const res3 = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${bulkAssignId}/tests/bulk`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        tests: [
+          { inputData: 'in1', expectedOutput: 'out1' },
+          { inputData: 'in2', expectedOutput: 'out2' },
+          { inputData: 'in3', expectedOutput: 'out3' },
+        ],
+      },
+    });
+    expect(res3.statusCode).toBe(201);
+    expect(res3.json().count).toBe(3);
+
+    const testsInDb = await pool.query(
+      'SELECT order_index FROM test_cases WHERE assignment_id = $1 ORDER BY order_index ASC',
+      [bulkAssignId]
+    );
+    expect(testsInDb.rows.map((r: any) => r.order_index)).toEqual([1, 2, 3]);
+
+    // 3. Add 2 more tests without replace -> order 4, 5
+    const res2More = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${bulkAssignId}/tests/bulk`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        tests: [
+          { inputData: 'in4', expectedOutput: 'out4' },
+          { inputData: 'in5', expectedOutput: 'out5' },
+        ],
+      },
+    });
+    expect(res2More.statusCode).toBe(201);
+    expect(res2More.json().count).toBe(2);
+
+    const tests5InDb = await pool.query(
+      'SELECT order_index FROM test_cases WHERE assignment_id = $1 ORDER BY order_index ASC',
+      [bulkAssignId]
+    );
+    expect(tests5InDb.rows.map((r: any) => r.order_index)).toEqual([1, 2, 3, 4, 5]);
+
+    // 4. replace=true replaces all tests
+    const resReplace = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${bulkAssignId}/tests/bulk`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        replace: true,
+        tests: [
+          { inputData: 'rep1', expectedOutput: 'repOut1' },
+          { inputData: 'rep2', expectedOutput: 'repOut2' },
+        ],
+      },
+    });
+    expect(resReplace.statusCode).toBe(201);
+    expect(resReplace.json().count).toBe(2);
+
+    const testsReplacedInDb = await pool.query(
+      'SELECT order_index FROM test_cases WHERE assignment_id = $1 ORDER BY order_index ASC',
+      [bulkAssignId]
+    );
+    expect(testsReplacedInDb.rows.map((r: any) => r.order_index)).toEqual([1, 2]);
+
+    // 5. Exceeding 50 test cases -> 400 and count unchanged
+    const tooMany = Array.from({ length: 51 }, (_, i) => ({
+      inputData: `in_${i}`,
+      expectedOutput: `out_${i}`,
+    }));
+    const resTooMany = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${bulkAssignId}/tests/bulk`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { replace: true, tests: tooMany },
+    });
+    expect(resTooMany.statusCode).toBe(400);
+
+    const countAfterTooMany = await pool.query(
+      'SELECT COUNT(*) FROM test_cases WHERE assignment_id = $1',
+      [bulkAssignId]
+    );
+    expect(Number(countAfterTooMany.rows[0].count)).toBe(2);
+
+    // 6. Test item exceeding MAX_TEST_CASE_BYTES (1 MB) -> 400 and nothing added
+    const hugeInput = 'A'.repeat(1024 * 1024 + 1);
+    const resHuge = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${bulkAssignId}/tests/bulk`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        tests: [{ inputData: hugeInput, expectedOutput: 'valid' }],
+      },
+    });
+    expect(resHuge.statusCode).toBe(400);
+
+    const countAfterHuge = await pool.query(
+      'SELECT COUNT(*) FROM test_cases WHERE assignment_id = $1',
+      [bulkAssignId]
+    );
+    expect(Number(countAfterHuge.rows[0].count)).toBe(2);
+
+    // 7. Student -> 403
+    const resStudent = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${bulkAssignId}/tests/bulk`,
+      headers: { cookie: student1.cookie },
+      payload: { tests: [{ inputData: '1', expectedOutput: '1' }] },
+    });
+    expect(resStudent.statusCode).toBe(403);
+  });
+
+  it('calls GRADER_URL/health on successful login and does not block when grader fails', async () => {
+    const hitsBefore = mockGraderHealthHits;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: lecturerA.email, password: 'Password123!' },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // Allow background fire-and-forget fetch to complete
+    await new Promise((r) => setTimeout(r, 100));
+    expect(mockGraderHealthHits).toBeGreaterThan(hitsBefore);
+
+    // Test with invalid/failing grader URL to verify it doesn't block response
+    const failingApp = buildApp({
+      pool,
+      config: { graderUrl: 'http://127.0.0.1:59999' },
+    });
+    const resFail = await failingApp.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: lecturerA.email, password: 'Password123!' },
+    });
+    expect(resFail.statusCode).toBe(200);
+    expect(resFail.json().user.email).toBe(lecturerA.email);
   });
 
   // ==========================================

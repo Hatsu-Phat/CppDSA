@@ -62,8 +62,8 @@ export interface FreeModeEntry {
 }
 
 export interface FreeModeSpec {
-  harness: string;
-  entry: FreeModeEntry;
+  harness?: string;
+  entry?: FreeModeEntry;
   studentSource: string;
 }
 
@@ -292,37 +292,35 @@ export function validateFreeModeSpec(spec: FreeModeSpec): { valid: boolean; erro
   if (!spec || typeof spec !== 'object') {
     return { valid: false, error: 'Free mode specification is required' };
   }
-  if (!spec.harness || typeof spec.harness !== 'string') {
-    return { valid: false, error: 'Harness is required for free mode' };
-  }
   if (typeof spec.studentSource !== 'string') {
     return { valid: false, error: 'Student source must be a string' };
   }
-  if (!spec.entry || typeof spec.entry !== 'object') {
-    return { valid: false, error: 'Entry point specification is required' };
-  }
-
-  const { type, name, className } = spec.entry;
-  if (type !== 'function' && type !== 'method') {
-    return { valid: false, error: "Entry type must be either 'function' or 'method'" };
-  }
-
-  if (!isValidCppIdentifier(name)) {
-    return {
-      valid: false,
-      error: `Entry function/method name '${name}' is invalid or is a C++ keyword`,
-    };
-  }
-
-  if (type === 'method') {
-    if (!className || typeof className !== 'string') {
-      return { valid: false, error: 'className is required for method entry type' };
+  if (spec.entry) {
+    if (typeof spec.entry !== 'object') {
+      return { valid: false, error: 'Entry point specification must be an object' };
     }
-    if (!isValidCppIdentifier(className)) {
+    const { type, name, className } = spec.entry;
+    if (type !== 'function' && type !== 'method') {
+      return { valid: false, error: "Entry type must be either 'function' or 'method'" };
+    }
+
+    if (!isValidCppIdentifier(name)) {
       return {
         valid: false,
-        error: `Entry className '${className}' is invalid or is a C++ keyword`,
+        error: `Entry function/method name '${name}' is invalid or is a C++ keyword`,
       };
+    }
+
+    if (type === 'method') {
+      if (!className || typeof className !== 'string') {
+        return { valid: false, error: 'className is required for method entry type' };
+      }
+      if (!isValidCppIdentifier(className)) {
+        return {
+          valid: false,
+          error: `Entry className '${className}' is invalid or is a C++ keyword`,
+        };
+      }
     }
   }
 
@@ -340,6 +338,9 @@ export function generateFreeModeCode(spec: FreeModeSpec): {
   }
 
   const { entry, studentSource, harness } = spec;
+  if (!entry || !harness) {
+    return { success: true, code: studentSource };
+  }
 
   let preamble = '';
   if (entry.type === 'function') {

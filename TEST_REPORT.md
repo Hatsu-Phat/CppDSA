@@ -299,3 +299,12 @@
 - Probe 80 điểm của Claude chạy lại: 77 PASS. Lỗi cũ đã hết: `timeLimitMs -1`/`memoryLimitMb 999999` → 400; `/submissions|assignments|classrooms/abc` → 400 `Mã không hợp lệ` (không còn `22P02`); CSV xuất `'=HYPERLINK(...)`. 3 FAIL còn lại không phải lỗi sản phẩm: B8/B12 do probe gửi `studentId=undefined` nên nay bị chặn 400 bởi kiểm UUID trước bước phân quyền (vẫn từ chối); H1 do 3 lần nộp không hợp lệ trước đó được tính vào hạn mức 6/phút (đúng thiết kế).
 - Qua proxy (rewrite của web): container A đăng nhập sai 10 lần email X → container B (IP khác) đăng nhập email khác qua web → **200** (trước T-0011: 429) ✔.
 - Kết luận: PASS. Merge `task/T-0011` → main. Còn phải xác minh trên production: giá trị `TRUST_PROXY` đúng cho chuỗi Vercel → Render (DEPLOY.md §6 bước 4).
+
+### T-0012 vòng 1 — FREE không harness, sửa/chấm lại điểm, nhập bộ test — review — 2026-11-02
+- Nguyên nhân lỗi `SYSTEM_ERROR` trên production (log Render 20:29:55Z): API gửi `POST /jobs` tới chính `cppdsa-api.onrender.com` (`Route POST:/jobs not found`, 404) → biến `GRADER_URL` của `cppdsa-api` bị đặt nhầm URL API. Claude sửa qua Render MCP thành `https://cppdsa-grader.onrender.com` (deploy `dep-dbjq90h42hec73dphhl0` succeeded). Không phải lỗi code.
+- File sửa trong phạm vi; KHÔNG có thay đổi trong `src/api/migrations/` ✔. Thêm `src/api/src/services/grader-dispatch.ts` (dùng chung cho nộp bài và chấm lại).
+- Lệnh 1: exit 0; api `36 passed | 58 skipped`, grader 15, shared 25, web 32; audit 5 moderate, 0 high/critical ✔.
+- Lệnh 2 (PostgreSQL thật): `Test Files 7 passed`, `Tests 94 passed` (có FREE không entryPointSpec, nộp FREE chỉ studentSource, sửa điểm + biên + phân quyền, regrade 1 bài/cả bài tập, bulk import, đăng nhập gọi grader `/health` không chặn) ✔.
+- Lệnh 3 (0.15 CPU/512 MB): `Summary: 58/58 cases PASSED`; ca FREE mới: in cứng bằng `if/cout` → AC, thiếu `main` → CE, harness cũ bị bỏ qua → AC ✔.
+- Ghi chú: `dispatchSubmissionToGrader` không kiểm `res.ok` khi grader trả 4xx/5xx → bài ở PENDING và được recovery gửi lại sau 2 phút (trước đây đánh SYSTEM_ERROR ngay). Chấp nhận.
+- Kết luận: PASS. Merge `task/T-0012` → main.

@@ -1,5 +1,6 @@
 import pg from 'pg';
-import { decideRecovery, JudgeJob } from '@cppdsa/shared';
+import { decideRecovery } from '@cppdsa/shared';
+import { dispatchSubmissionToGrader } from './grader-dispatch.js';
 
 export interface RecoveryOptions {
   pool: pg.Pool;
@@ -44,55 +45,12 @@ export async function runRecovery(
           [decision.retryCount, sub.id]
         );
 
-        // Fetch hidden tests and send to grader
-        try {
-          const testsRes = await pool.query(
-            'SELECT id, input_data, expected_output FROM test_cases WHERE assignment_id = $1 AND is_hidden = true ORDER BY order_index ASC',
-            [sub.assignment_id]
-          );
-
-          const job: JudgeJob = {
-            submissionId: sub.id,
-            mode: sub.mode.toLowerCase() as 'template' | 'free',
-            language: 'cpp17',
-            timeLimitMs: sub.time_limit_ms,
-            memoryLimitMb: sub.memory_limit_mb,
-            compare: 'trim-trailing',
-            hiddenTests: testsRes.rows.map((t) => ({
-              id: t.id,
-              input: t.input_data,
-              expected: t.expected_output,
-            })),
-            callbackUrl: `${apiBaseUrl}/api/internal/grader-callback`,
-          };
-
-          if (job.mode === 'template') {
-            job.template = {
-              source: sub.template_code,
-              regions: JSON.parse(sub.submitted_code),
-            };
-          } else {
-            job.free = {
-              harness: sub.entry_point_spec?.harness || '',
-              entry:
-                typeof sub.entry_point_declaration === 'string'
-                  ? JSON.parse(sub.entry_point_declaration)
-                  : sub.entry_point_declaration,
-              studentSource: sub.submitted_code,
-            };
-          }
-
-          await fetch(`${graderUrl}/jobs`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Grader-Secret': graderSecret,
-            },
-            body: JSON.stringify(job),
-          });
-        } catch {
-          // If grader is down, submission remains PENDING/RUNNING with incremented retry_count
-        }
+        // Dispatch to grader
+        await dispatchSubmissionToGrader(
+          pool,
+          { graderUrl, graderSecret, apiBaseUrl } as any,
+          sub.id
+        );
       } else if (decision.action === 'MARK_SYSTEM_ERROR') {
         failed++;
         await pool.query(

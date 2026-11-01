@@ -24,30 +24,6 @@ int main() {
 }
 `;
 
-const FREE_HARNESS_FUNCTION = `
-#include <iostream>
-
-int main() {
-    int a, b;
-    if (std::cin >> a >> b) {
-        std::cout << CPPDSA_ENTRY(a, b) << std::endl;
-    }
-    return 0;
-}
-`;
-
-const FREE_HARNESS_METHOD = `
-#include <iostream>
-
-int main() {
-    int a, b;
-    if (std::cin >> a >> b) {
-        std::cout << CPPDSA_ENTRY(a, b) << std::endl;
-    }
-    return 0;
-}
-`;
-
 export const testCases = [
   // ==========================================
   // Category A: Template Mode standard cases
@@ -183,11 +159,11 @@ int main() {
   },
 
   // ==========================================
-  // Category B: Free Mode Function Entry cases
+  // Category B: Free Mode Cases (Full program reading stdin, writing stdout)
   // ==========================================
   {
     id: 'TC-07',
-    name: 'Free mode function entry AC',
+    name: 'Free mode standard stdin/stdout AC',
     mode: 'free',
     job: {
       mode: 'free',
@@ -196,9 +172,14 @@ int main() {
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'customAdd' },
-        studentSource: 'int customAdd(int x, int y) { return x + y; }',
+        studentSource: `#include <iostream>
+int main() {
+    int x, y;
+    if (std::cin >> x >> y) {
+        std::cout << (x + y) << std::endl;
+    }
+    return 0;
+}`,
       },
       hiddenTests: [{ id: '1', input: '15 25', expected: '40' }],
     },
@@ -206,7 +187,7 @@ int main() {
   },
   {
     id: 'TC-08',
-    name: 'Free mode function entry WA',
+    name: 'Free mode wrong answer WA',
     mode: 'free',
     job: {
       mode: 'free',
@@ -215,9 +196,14 @@ int main() {
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'customAdd' },
-        studentSource: 'int customAdd(int x, int y) { return x * y; }',
+        studentSource: `#include <iostream>
+int main() {
+    int x, y;
+    if (std::cin >> x >> y) {
+        std::cout << (x * y) << std::endl;
+    }
+    return 0;
+}`,
       },
       hiddenTests: [{ id: '1', input: '15 25', expected: '40' }],
     },
@@ -225,7 +211,7 @@ int main() {
   },
   {
     id: 'TC-09',
-    name: 'Free mode function entry TLE',
+    name: 'Free mode infinite loop TLE',
     mode: 'free',
     job: {
       mode: 'free',
@@ -234,9 +220,15 @@ int main() {
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'customLoop' },
-        studentSource: 'int customLoop(int x, int y) { while(1); return x+y; }',
+        studentSource: `#include <iostream>
+int main() {
+    int x, y;
+    if (std::cin >> x >> y) {
+        while (true) {}
+        std::cout << (x + y) << std::endl;
+    }
+    return 0;
+}`,
       },
       hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
     },
@@ -244,7 +236,7 @@ int main() {
   },
   {
     id: 'TC-10',
-    name: 'Free mode function entry MLE',
+    name: 'Free mode memory limit exceeded MLE',
     mode: 'free',
     job: {
       mode: 'free',
@@ -253,14 +245,17 @@ int main() {
       memoryLimitMb: 32,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'customMem' },
         studentSource: `
+#include <iostream>
 #include <vector>
-int customMem(int x, int y) {
-    std::vector<std::vector<int>> v;
-    while(true) { v.emplace_back(1000000, 1); }
-    return x + y;
+int main() {
+    int x, y;
+    if (std::cin >> x >> y) {
+        std::vector<std::vector<int>> v;
+        while(true) { v.emplace_back(1000000, 1); }
+        std::cout << x + y << std::endl;
+    }
+    return 0;
 }
 `,
       },
@@ -270,7 +265,7 @@ int customMem(int x, int y) {
   },
   {
     id: 'TC-11',
-    name: 'Free mode function entry RE (uncaught throw)',
+    name: 'Free mode runtime error RE',
     mode: 'free',
     job: {
       mode: 'free',
@@ -279,12 +274,11 @@ int customMem(int x, int y) {
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'customThrow' },
         studentSource: `
 #include <stdexcept>
-int customThrow(int, int) {
+int main() {
     throw std::runtime_error("Fatal logic error");
+    return 0;
 }
 `,
       },
@@ -294,7 +288,7 @@ int customThrow(int, int) {
   },
   {
     id: 'TC-12',
-    name: 'Free mode function entry CE (syntax error)',
+    name: 'Free mode syntax error CE',
     mode: 'free',
     job: {
       mode: 'free',
@@ -303,9 +297,7 @@ int customThrow(int, int) {
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'customErr' },
-        studentSource: 'int customErr(int a, int b) { return a + ; }',
+        studentSource: 'int main() { return a + ; }',
       },
       hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
     },
@@ -313,11 +305,11 @@ int customThrow(int, int) {
   },
 
   // ==========================================
-  // Category C: Free Mode Method Entry cases
+  // Category C: Free Mode Specialized cases (Hardcoded output, Missing main, Legacy harness)
   // ==========================================
   {
     id: 'TC-13',
-    name: 'Free mode method entry AC',
+    name: 'Free mode hardcoded if/cout output matching test is AC',
     mode: 'free',
     job: {
       mode: 'free',
@@ -326,15 +318,17 @@ int customThrow(int, int) {
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_METHOD,
-        entry: { type: 'method', name: 'compute', className: 'Calculator' },
         studentSource: `
-class Calculator {
-public:
-    int compute(int a, int b) {
-        return a * 10 + b;
+#include <iostream>
+int main() {
+    int a, b;
+    if (std::cin >> a >> b) {
+        if (a == 3 && b == 7) {
+            std::cout << 37 << std::endl;
+        }
     }
-};
+    return 0;
+}
 `,
       },
       hiddenTests: [{ id: '1', input: '3 7', expected: '37' }],
@@ -343,7 +337,7 @@ public:
   },
   {
     id: 'TC-14',
-    name: 'Free mode CE (wrong method name specified in entry)',
+    name: 'Free mode missing main() function causes CE',
     mode: 'free',
     job: {
       mode: 'free',
@@ -352,13 +346,10 @@ public:
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_METHOD,
-        entry: { type: 'method', name: 'nonExistentMethod', className: 'Calculator' },
         studentSource: `
-class Calculator {
-public:
-    int actualMethod(int a, int b) { return a + b; }
-};
+int solve(int a, int b) {
+    return a + b;
+}
 `,
       },
       hiddenTests: [{ id: '1', input: '3 7', expected: '10' }],
@@ -367,7 +358,7 @@ public:
   },
   {
     id: 'TC-15',
-    name: 'Free mode CE (wrong className specified in entry)',
+    name: 'Free mode with legacy harness/entry ignores harness and runs student main AC',
     mode: 'free',
     job: {
       mode: 'free',
@@ -376,18 +367,22 @@ public:
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_METHOD,
-        entry: { type: 'method', name: 'compute', className: 'MissingClass' },
+        harness: '#error Should not compile harness',
+        entry: { type: 'method', name: 'compute', className: 'IgnoreMe' },
         studentSource: `
-class OtherClass {
-public:
-    int compute(int a, int b) { return a + b; }
-};
+#include <iostream>
+int main() {
+    int a, b;
+    if (std::cin >> a >> b) {
+        std::cout << (a + b) << std::endl;
+    }
+    return 0;
+}
 `,
       },
       hiddenTests: [{ id: '1', input: '3 7', expected: '10' }],
     },
-    expected: { verdict: 'CE', score: 0 },
+    expected: { verdict: 'AC', score: 1 },
   },
 
   // ==========================================
@@ -681,7 +676,7 @@ int main() { solve(); return 0; }
   },
   {
     id: 'TC-29',
-    name: 'Validation: Free mode keyword entry name rejected with 400',
+    name: 'Validation: Free mode missing studentSource rejected with 400',
     mode: 'http-validation',
     job: {
       mode: 'free',
@@ -689,18 +684,14 @@ int main() { solve(); return 0; }
       timeLimitMs: 1000,
       memoryLimitMb: 256,
       compare: 'trim-trailing',
-      free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'class' }, // C++ keyword
-        studentSource: 'int solve() { return 0; }',
-      },
+      free: {},
       hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
     },
     expected: { statusCode: 400 },
   },
   {
     id: 'TC-30',
-    name: 'Validation: Free mode invalid identifier regex rejected with 400',
+    name: 'Validation: Free mode missing free spec object rejected with 400',
     mode: 'http-validation',
     job: {
       mode: 'free',
@@ -708,11 +699,6 @@ int main() { solve(); return 0; }
       timeLimitMs: 1000,
       memoryLimitMb: 256,
       compare: 'trim-trailing',
-      free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: '123-bad-name' },
-        studentSource: 'int solve() { return 0; }',
-      },
       hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
     },
     expected: { statusCode: 400 },
@@ -881,7 +867,7 @@ int main() { solve(); return 0; }
   },
   {
     id: 'TC-37',
-    name: 'Anti-cheating: Free mode student defining own main() causes CE',
+    name: 'Free mode student defines main() and uses standard libraries successfully AC',
     mode: 'free',
     job: {
       mode: 'free',
@@ -890,13 +876,18 @@ int main() { solve(); return 0; }
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: FREE_HARNESS_FUNCTION,
-        entry: { type: 'function', name: 'myFunc' },
-        studentSource: 'int myFunc(int a, int b) { return a + b; }\nint main() { return 0; }',
+        studentSource: `#include <iostream>
+int main() {
+    int a, b;
+    if (std::cin >> a >> b) {
+        std::cout << (a + b) << std::endl;
+    }
+    return 0;
+}`,
       },
       hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
     },
-    expected: { verdict: 'CE', score: 0 },
+    expected: { verdict: 'AC', score: 1 },
   },
   {
     id: 'TC-38',
@@ -1238,7 +1229,7 @@ int main() { int a, b; if (std::cin >> a >> b) std::cout << solve(a, b) << std::
   },
   {
     id: 'TC-49',
-    name: 'PCH Regression (d): Free mode with #include <iostream> after code compiles and AC',
+    name: 'PCH Regression (d): Free mode with #include <iostream> compiles and AC',
     mode: 'free',
     job: {
       mode: 'free',
@@ -1247,12 +1238,15 @@ int main() { int a, b; if (std::cin >> a >> b) std::cout << solve(a, b) << std::
       memoryLimitMb: 256,
       compare: 'trim-trailing',
       free: {
-        harness: `#include <vector>
-int main() { int a, b; if (std::cin >> a >> b) std::cout << CPPDSA_ENTRY(a, b) << std::endl; return 0; }`,
-        entry: { type: 'function', name: 'solve' },
         studentSource: `int add(int x, int y) { return x + y; }
 #include <iostream>
-int solve(int a, int b) { return add(a, b); }`,
+int main() {
+    int a, b;
+    if (std::cin >> a >> b) {
+        std::cout << add(a, b) << std::endl;
+    }
+    return 0;
+}`,
       },
       hiddenTests: [{ id: '1', input: '11 22', expected: '33' }],
     },
