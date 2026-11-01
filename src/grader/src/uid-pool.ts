@@ -13,6 +13,8 @@ export class UidPool {
     for (let i = 0; i < count; i++) {
       const uid = startUid + i;
       this.availableUids.push(uid);
+      this.killProcessesByUid(uid);
+      this.cleanSandboxFiles(uid);
       if (
         process.platform === 'linux' &&
         typeof process.getuid === 'function' &&
@@ -41,6 +43,8 @@ export class UidPool {
   public async acquire(): Promise<number> {
     const uid = this.availableUids.shift();
     if (uid !== undefined) {
+      this.killProcessesByUid(uid);
+      this.cleanSandboxFiles(uid);
       return uid;
     }
     return new Promise<number>((resolve) => {

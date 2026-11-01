@@ -1169,4 +1169,191 @@ int main() {
     },
     expected: { statusCode: 400 },
   },
+  {
+    id: 'TC-46',
+    name: 'PCH Regression (a): #include <iostream> on line 1 compiles and AC',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: `#include <iostream>
+// STUDENT_BEGIN solve
+int solve(int a, int b);
+// STUDENT_END
+int main() { int a, b; if (std::cin >> a >> b) std::cout << solve(a, b) << std::endl; return 0; }`,
+        regions: { solve: 'int solve(int a, int b) { return a + b; }' },
+      },
+      hiddenTests: [{ id: '1', input: '12 34', expected: '46' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-47',
+    name: 'PCH Regression (b): #include <vector> then #include <iostream> compiles and AC',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: `#include <vector>
+#include <iostream>
+// STUDENT_BEGIN solve
+int solve(int a, int b);
+// STUDENT_END
+int main() { int a, b; if (std::cin >> a >> b) std::cout << solve(a, b) << std::endl; return 0; }`,
+        regions: { solve: 'int solve(int a, int b) { return a + b; }' },
+      },
+      hiddenTests: [{ id: '1', input: '5 7', expected: '12' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-48',
+    name: 'PCH Regression (c): #include <bits/stdc++.h> in student region compiles and AC',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: `#include <iostream>
+// STUDENT_BEGIN solve
+int solve(int a, int b);
+// STUDENT_END
+int main() { int a, b; if (std::cin >> a >> b) std::cout << solve(a, b) << std::endl; return 0; }`,
+        regions: { solve: '#include <bits/stdc++.h>\nint solve(int a, int b) { return a + b; }' },
+      },
+      hiddenTests: [{ id: '1', input: '100 200', expected: '300' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-49',
+    name: 'PCH Regression (d): Free mode with #include <iostream> after code compiles and AC',
+    mode: 'free',
+    job: {
+      mode: 'free',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      free: {
+        harness: `#include <vector>
+int main() { int a, b; if (std::cin >> a >> b) std::cout << CPPDSA_ENTRY(a, b) << std::endl; return 0; }`,
+        entry: { type: 'function', name: 'solve' },
+        studentSource: `int add(int x, int y) { return x + y; }
+#include <iostream>
+int solve(int a, int b) { return add(a, b); }`,
+      },
+      hiddenTests: [{ id: '1', input: '11 22', expected: '33' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-50',
+    name: 'CPU-time TL: Heavy loop ~300ms CPU under TL 1000ms gives AC',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: TEMPLATE_SUM,
+        regions: {
+          solve: `int solve(int a, int b) {
+            volatile long long sum = 0;
+            for (long long i = 0; i < 30000000LL; ++i) { sum += i & 1; }
+            return a + b;
+          }`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '7 8', expected: '15' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
+  {
+    id: 'TC-51',
+    name: 'Wall deadline catches sleep: sleep(7) with TL 500ms gives TLE',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 500,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: TEMPLATE_SUM,
+        regions: {
+          solve: `#include <unistd.h>
+          int solve(int a, int b) {
+            (void)a; (void)b;
+            sleep(7);
+            return 42;
+          }`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '1 2', expected: '3' }],
+    },
+    expected: { verdict: 'TLE', score: 0 },
+  },
+  {
+    id: 'TC-52',
+    name: 'CPU-time TLE: Busy loop exceeding CPU TL (CPU > TL) gives TLE',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 500,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: TEMPLATE_SUM,
+        regions: {
+          solve: `int solve(int a, int b) {
+            (void)a; (void)b;
+            volatile long long sum = 0;
+            while (true) { sum += 1; }
+            return 42;
+          }`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '3 4', expected: '7' }],
+    },
+    expected: { verdict: 'TLE', score: 0 },
+  },
+  {
+    id: 'TC-53',
+    name: 'CPU-time AC: CPU ~800ms under TL 1000ms gives AC',
+    mode: 'template',
+    job: {
+      mode: 'template',
+      language: 'cpp17',
+      timeLimitMs: 1000,
+      memoryLimitMb: 256,
+      compare: 'trim-trailing',
+      template: {
+        source: TEMPLATE_SUM,
+        regions: {
+          solve: `int solve(int a, int b) {
+            volatile long long sum = 0;
+            for (long long i = 0; i < 60000000LL; ++i) { sum += i & 1; }
+            return a + b + (int)(sum & 0);
+          }`,
+        },
+      },
+      hiddenTests: [{ id: '1', input: '15 25', expected: '40' }],
+    },
+    expected: { verdict: 'AC', score: 1 },
+  },
 ];

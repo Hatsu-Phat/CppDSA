@@ -22,7 +22,7 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
     {
       config: {
         rateLimit: {
-          max: 10,
+          max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 10),
           timeWindow: 60 * 1000,
           keyGenerator: (req) => req.ip,
           errorResponseBuilder: () => ({

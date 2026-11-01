@@ -63,6 +63,15 @@ cp .env.example .env
 | `GRADER_HOST` / `HOST`| Địa chỉ bind của Grader | `0.0.0.0` |
 | `WEB_PORT` / `PORT` | Cổng HTTP của Frontend Web | `3000` |
 | `WEB_HOST` / `HOST` | Địa chỉ bind của Frontend Web | `0.0.0.0` |
+| `GRADER_CONCURRENCY` | Số worker chấm song song | `2` |
+| `GRADER_WALL_FACTOR` | Hệ số wall deadline so với CPU time limit | `10` |
+| `COMPILE_TIMEOUT_MS` | Giới hạn wall time biên dịch (ms) | `10000` (Local) / `15000` (Render) |
+| `COMPILE_CPU_LIMIT_S` | Giới hạn CPU time biên dịch (s, RLIMIT_CPU) | `10` |
+| `GRADER_MEMORY_BUDGET_MB` | Ngân sách RAM cho các job chấm đồng thời (MB) | `384` |
+| `ENABLE_PCH` | Bật Precompiled Header cho `bits/stdc++.h` | `true` |
+| `GLOBAL_RATE_LIMIT_MAX` | Giới hạn request toàn cục /api/* (req/phút/IP) | `300` |
+| `LOGIN_RATE_LIMIT_MAX` | Giới hạn đăng nhập /api/auth/login (req/phút/IP) | `10` |
+| `ENABLE_CGROUP_LOGGING` | Bật ghi log định kỳ tài nguyên cgroup CPU/RAM | `false` |
 
 ---
 

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
@@ -36,8 +37,34 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   };
   const pool = options.pool || new pg.Pool({ connectionString: cfg.databaseUrl, max: 5 });
 
+  // Structured logging with pino and strict credential/code redaction
   const app = Fastify({
-    logger: cfg.nodeEnv !== 'test',
+    logger:
+      cfg.nodeEnv !== 'test'
+        ? {
+            level: 'info',
+            redact: {
+              paths: [
+                'req.headers.cookie',
+                'req.headers["x-grader-secret"]',
+                'req.headers.authorization',
+                'password',
+                'newPassword',
+                'oldPassword',
+                'token',
+                'graderSecret',
+                'databaseUrl',
+                'DATABASE_URL',
+                'submittedCode',
+                'studentSource',
+                'input',
+                'expected',
+                'actual',
+              ],
+              censor: '[REDACTED]',
+            },
+          }
+        : false,
     bodyLimit: 10 * 1024 * 1024,
   });
 
@@ -46,13 +73,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     secret: cfg.cookieSecret,
   });
 
-  app.register(fastifyRateLimit, {
-    global: false,
-    hook: 'preHandler',
-  });
-
-  // 2. Authentication hook (runs on every request)
-  app.addHook('preHandler', async (request) => {
+  // 2. Authentication hook (runs on every request in preValidation, before preHandler rate limits)
+  app.addHook('preValidation', async (request) => {
     request.user = undefined;
     request.sessionId = undefined;
 
@@ -88,6 +110,56 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       // In case of DB read error, request remains unauthenticated
     }
   });
+
+  const globalApiLimit = Number(process.env.GLOBAL_RATE_LIMIT_MAX || 300);
+  app.register(fastifyRateLimit, {
+    global: true,
+    max: globalApiLimit,
+    timeWindow: 60 * 1000,
+    hook: 'preHandler',
+    keyGenerator: (req) => req.ip,
+    allowList: (req) => {
+      const url = req.url.split('?')[0];
+      return url === '/health';
+    },
+    errorResponseBuilder: () => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: 'Quá nhiều yêu cầu từ địa chỉ IP của bạn. Vui lòng thử lại sau.',
+    }),
+  });
+
+  // Optional cgroup resource logging every 10s if enabled
+  if (process.env.ENABLE_CGROUP_LOGGING === 'true') {
+    setInterval(() => {
+      try {
+        let cpuStat = '';
+        let memCurrent = '';
+        let memPeak = '';
+        if (fs.existsSync('/sys/fs/cgroup/cpu.stat')) {
+          cpuStat = fs.readFileSync('/sys/fs/cgroup/cpu.stat', 'utf-8').trim();
+        }
+        if (fs.existsSync('/sys/fs/cgroup/memory.current')) {
+          memCurrent = fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf-8').trim();
+        }
+        if (fs.existsSync('/sys/fs/cgroup/memory.peak')) {
+          memPeak = fs.readFileSync('/sys/fs/cgroup/memory.peak', 'utf-8').trim();
+        }
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            time: new Date().toISOString(),
+            service: 'api-cgroup',
+            cpuStat,
+            memoryCurrentBytes: Number(memCurrent) || null,
+            memoryPeakBytes: Number(memPeak) || null,
+          })
+        );
+      } catch {
+        // Ignore
+      }
+    }, 10000);
+  }
 
   // 3. Password change enforcement hook
   app.addHook('preHandler', async (request, reply) => {
@@ -144,11 +216,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   };
 
   app.get('/health', handleHealth);
-  app.get('/api/health', handleHealth);
 
   // 6. Register routes with /api prefix
   app.register(
     async (api) => {
+      api.get('/health', handleHealth);
       api.register(authRoutes, { prefix: '/auth', pool, config: cfg });
       api.register(classroomRoutes, { prefix: '/classrooms', pool, config: cfg });
       api.register(assignmentRoutes, { pool, config: cfg });

@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@cppdsa/shared": "*",
-    "fastify": "^4.28.1"
+    "fastify": "^5.12.7"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.7"
   }
 }

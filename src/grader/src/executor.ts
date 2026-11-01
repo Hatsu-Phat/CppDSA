@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import {
   JudgeJob,
   JudgeResult,
@@ -13,13 +14,19 @@ import { GraderConfig } from './config.js';
 import { compileCpp } from './compiler.js';
 import { runTest } from './runner.js';
 
+export interface ExecuteJobResult extends JudgeResult {
+  compileMs?: number;
+  runMs?: number;
+}
+
 export async function executeJob(
   job: JudgeJob,
   uidPool: UidPool,
   config: GraderConfig
-): Promise<JudgeResult> {
+): Promise<ExecuteJobResult> {
   const sandboxUid = await uidPool.acquire();
   const runDir = `/tmp/run_${job.submissionId}_${Date.now()}`;
+  let totalRunMs = 0;
 
   try {
     // 0. Ensure system temporary directories are not world-writable
@@ -90,6 +97,8 @@ export async function executeJob(
       sandboxUid,
       launcherPath: config.launcherPath,
       timeoutMs: config.compileTimeoutMs,
+      cpuLimitS: config.compileCpuLimitS,
+      enablePch: config.enablePch,
       secretToScrub: config.graderSecret,
     });
 
@@ -101,6 +110,8 @@ export async function executeJob(
         score: 0,
         tests: [],
         compileMessage: compileRes.output,
+        compileMs: compileRes.wallTimeMs,
+        runMs: 0,
       };
     }
 
@@ -118,13 +129,16 @@ export async function executeJob(
 
     for (let i = 0; i < totalTests; i++) {
       const hiddenTest = job.hiddenTests[i];
+      const runStart = performance.now();
       const testRes = await runTest(runDir, binPath, hiddenTest.input, hiddenTest.expected, {
         sandboxUid,
         launcherPath: config.launcherPath,
         timeLimitMs: job.timeLimitMs,
         memoryLimitMb: job.memoryLimitMb,
         maxOutputBytes: config.maxOutputBytes,
+        graderWallFactor: config.graderWallFactor,
       });
+      totalRunMs += Math.round(performance.now() - runStart);
 
       if (testRes.verdict === 'AC') {
         passedCount++;
@@ -159,6 +173,8 @@ export async function executeJob(
       verdict: overallVerdict,
       score,
       tests: testResults,
+      compileMs: compileRes.wallTimeMs,
+      runMs: totalRunMs,
     };
   } catch (err: any) {
     return {
@@ -168,6 +184,8 @@ export async function executeJob(
       score: 0,
       tests: [],
       compileMessage: `System error during execution: ${err.message || 'Unknown error'}`,
+      compileMs: 0,
+      runMs: totalRunMs,
     };
   } finally {
     // Clean up run directory and release UID

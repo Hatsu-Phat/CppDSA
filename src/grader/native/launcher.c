@@ -17,6 +17,7 @@
 
 static volatile pid_t g_child_pid = 0;
 static uid_t g_target_uid = 0;
+static int g_is_compiler = 0;
 
 static void kill_all_by_uid(uid_t uid) {
     if (uid == 0) return; // Do not kill root
@@ -49,7 +50,7 @@ static void reap_all_children(void) {
         kill(-g_child_pid, SIGKILL);
         kill(g_child_pid, SIGKILL);
     }
-    if (g_target_uid > 0) {
+    if (!g_is_compiler && g_target_uid > 0) {
         kill_all_by_uid(g_target_uid);
     }
     while (waitpid(-1, NULL, WNOHANG | __WALL) > 0) {}
@@ -129,6 +130,13 @@ int main(int argc, char *argv[]) {
     }
 
     g_target_uid = target_uid;
+    g_is_compiler = is_compiler;
+
+    // Ensure launcher terminates immediately if parent dies
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
+    if (getppid() == 1) {
+        _exit(1);
+    }
 
     // Change directory if requested
     if (workdir) {

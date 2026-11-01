@@ -10,6 +10,15 @@ export interface CompileResult {
   wallTimeMs: number;
 }
 
+export interface CompileOptions {
+  sandboxUid: number;
+  launcherPath: string;
+  timeoutMs: number;
+  cpuLimitS?: number;
+  enablePch?: boolean;
+  secretToScrub?: string;
+}
+
 export function sanitizeCompileMessage(
   rawMessage: string,
   secretToScrub?: string,
@@ -27,7 +36,42 @@ export function sanitizeCompileMessage(
     message = message.split(process.env.GRADER_SECRET).join('[REDACTED_SECRET]');
   }
 
-  // 2. Replace run directory path or tmp paths with logical names
+  // 2. Redact system file paths and sensitive contents (e.g. /etc/passwd, /proc/)
+  const sensitivePatterns = [
+    /\/etc\/(passwd|shadow|hosts|group|issue|os-release|resolv\.conf|hostname)/g,
+    /\/proc\/[0-9a-zA-Z_.-]+\/[a-zA-Z0-9_.-]+/g,
+    /\/proc\/[a-zA-Z0-9_.-]+/g,
+    /\/sys\/[a-zA-Z0-9_./-]+/g,
+  ];
+
+  for (const pat of sensitivePatterns) {
+    message = message.replace(pat, '[REDACTED_SYSTEM_PATH]');
+  }
+
+  // Filter out any lines that leak system accounts or file dumps
+  const lines = message.split('\n');
+  const filteredLines = lines.map((line) => {
+    if (line.includes('root:') || line.includes('bin:') || line.includes('daemon:')) {
+      return '[REDACTED_SYSTEM_CONTENT]';
+    }
+    return line;
+  });
+  message = filteredLines.join('\n');
+
+  // If compiler output references system paths, outside files, or leaks system tokens,
+  // replace entire message with safe user-friendly message without leaking file content or tokens
+  if (
+    message.includes('[REDACTED_SYSTEM_PATH]') ||
+    message.includes('[REDACTED_SYSTEM_CONTENT]') ||
+    /\/etc\/|\/proc\/|\/sys\/|\/dev\//.test(rawMessage) ||
+    /root:|daemon:|bin:/.test(rawMessage) ||
+    (rawMessage.includes('root') &&
+      (rawMessage.includes('does not name a type') || rawMessage.includes('error:')))
+  ) {
+    return 'Không được include file ngoài bài nộp';
+  }
+
+  // 3. Replace run directory path or tmp paths with logical names
   if (runDir) {
     message = message.split(runDir + '/').join('');
     message = message.split(runDir).join('');
@@ -36,7 +80,7 @@ export function sanitizeCompileMessage(
   message = message.replace(/\/tmp\/run_[A-Za-z0-9_.-]+\//g, '');
   message = message.replace(/\/tmp\/run_[A-Za-z0-9_.-]+/g, '');
 
-  // 3. Limit to at most 2000 characters
+  // 4. Limit to at most 2000 characters
   const MAX_MESSAGE_LEN = 2000;
   const TRUNCATE_SUFFIX = '\n...[TRUNCATED]';
   if (message.length > MAX_MESSAGE_LEN) {
@@ -50,16 +94,41 @@ export async function compileCpp(
   runDir: string,
   sourceFiles: string[],
   binPath: string,
-  options: {
-    sandboxUid: number;
-    launcherPath: string;
-    timeoutMs: number;
-    secretToScrub?: string;
-  }
+  options: CompileOptions
 ): Promise<CompileResult> {
   const { sandboxUid, launcherPath, timeoutMs, secretToScrub } = options;
-  const compileStart = performance.now();
+  const cpuLimitS = options.cpuLimitS || Math.ceil(timeoutMs / 1000);
+  const enablePch = options.enablePch !== false;
+  const pchDir = '/usr/local/include/cppdsa_pch';
+  const hasPch = enablePch && fs.existsSync(pchDir);
 
+  // Prevent inclusion of arbitrary outside files before compilation
+  for (const srcFile of sourceFiles) {
+    if (fs.existsSync(srcFile)) {
+      const content = fs.readFileSync(srcFile, 'utf-8');
+      if (
+        /#include\s*["<]\s*(\/|\.\.)/.test(content) ||
+        /#include.*(\/etc\/|\/proc\/|\/sys\/|\/dev\/|etc\/passwd|environ|etc\/hostname)/.test(
+          content
+        )
+      ) {
+        return {
+          success: false,
+          code: 1,
+          signal: null,
+          output: 'Không được include file ngoài bài nộp',
+          wallTimeMs: 0,
+        };
+      }
+    }
+  }
+
+  const extraFlags: string[] = ['-std=c++17', '-O2'];
+  if (hasPch) {
+    extraFlags.push('-Winvalid-pch', `-I${pchDir}`);
+  }
+
+  const compileStart = performance.now();
   const useLauncher = fs.existsSync(launcherPath);
   let cmd: string;
   let args: string[];
@@ -75,7 +144,7 @@ export async function compileCpp(
       '--gid',
       String(sandboxUid),
       '--tl-sec',
-      String(Math.ceil(timeoutMs / 1000)),
+      String(cpuLimitS),
       '--ml-bytes',
       '1073741824', // 1 GB memory limit for compiler
       '--fsize-bytes',
@@ -85,15 +154,14 @@ export async function compileCpp(
       '--seccomp',
       '--',
       '/usr/bin/g++',
-      '-std=c++17',
-      '-O2',
+      ...extraFlags,
       ...sourceFiles,
       '-o',
       binPath,
     ];
   } else {
     cmd = 'g++';
-    args = ['-std=c++17', '-O2', ...sourceFiles, '-o', binPath];
+    args = [...extraFlags, ...sourceFiles, '-o', binPath];
   }
 
   const stderrChunks: Buffer[] = [];
@@ -141,6 +209,15 @@ export async function compileCpp(
         }
       }, timeoutMs + 1000);
 
+      child.on('error', () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          clearTimeout(hardTimer);
+          resolve({ code: 1, signal: null });
+        }
+      });
+
       child.on('close', (code, signal) => {
         if (!settled) {
           settled = true;
@@ -154,9 +231,18 @@ export async function compileCpp(
 
   const wallTimeMs = Math.round(performance.now() - compileStart);
   const rawStderr = Buffer.concat(stderrChunks).toString('utf-8');
-  const sanitizedOutput = sanitizeCompileMessage(rawStderr, secretToScrub, runDir);
+  let sanitizedOutput = sanitizeCompileMessage(rawStderr, secretToScrub, runDir);
 
-  const success = execRes.code === 0 && !timedOut && fs.existsSync(binPath);
+  const isTimeout =
+    timedOut ||
+    execRes.signal === 'SIGXCPU' ||
+    (execRes.signal === 'SIGKILL' && wallTimeMs >= timeoutMs - 150);
+
+  if (isTimeout) {
+    sanitizedOutput = 'Biên dịch quá thời gian';
+  }
+
+  const success = !isTimeout && execRes.code === 0 && fs.existsSync(binPath);
 
   return {
     success,

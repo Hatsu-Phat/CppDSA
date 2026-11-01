@@ -1,0 +1,4 @@
+services:
+  grader:
+    environment:
+      ENABLE_PCH: 'false'
