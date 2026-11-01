@@ -203,3 +203,10 @@
 - Đánh giá test: test deadline (`integration.test.ts:929`) tự INSERT `is_late` bằng SQL → không kiểm logic tính trễ của API (gần tautology). Thiếu test biên: mã sinh viên đúng 65536 byte được nhận (chỉ có test > 65536), 50/51 hidden tests, CSV 500/501 dòng, rate limit 429.
 - Tiêu chí P5: (1) endpoint có integration test ✔ (65 test, có kiểm openapi coverage); (2) phân quyền âm tính ✔ (probe xác nhận); (3) giới hạn kích thước ✘ thiếu test biên một số giới hạn; (4) deadline/max-score ✘ test không kiểm logic API; (5) credential chỉ ở backend ✔ (chưa thấy vi phạm; test quét có sẵn). Thêm 2 lỗi chức năng ở trên.
 - Kết luận: FAIL → T-0007 vòng 2.
+
+### T-0007 vòng 2 / Phase P5 — nghiệm thu lại — 2026-11-01
+- Claude chạy lại: lệnh 1 exit 0 (api 18 pass, 52 integration skipped khi không có DB); lệnh 2 (compose db) `Tests 70 passed (70)`, 0 skipped; compose: api/db/grader healthy.
+- Test mới đã có và kiểm đúng điều cần kiểm: 0-based 4 test [AC, WA, TLE, AC] → 2/4 đúng thứ tự (`integration.test.ts:1028`); deadline/late/max-score qua API với `config.now` tiêm được, không INSERT trực tiếp (`:1232`); biên 65536/65537 byte mã sinh viên (`:915`), 50/51 hidden tests (`:798`), CSV 500/501 dòng (`:448`); rate limit đăng nhập lần 11 → 429 (`:1577`), submit lần 7 → 429 (`:1600`).
+- Probe E2E độc lập (e2e5.mjs, grader thật): 18/18 OK — import trả `temporaryPassword` cho tài khoản mới (`status:"created"`); AC → 4 verdict AC; DB: submission AC 4/4 có 4 dòng kết quả, WA 1/4 có 4 dòng (vòng 1 chỉ 3); các kiểm tra phân quyền/leak/callback/CSV/warmup như vòng 1 đều đạt.
+- Credential: không có `postgres://`, `DATABASE_URL`, `GRADER_SECRET` trong `src/web`, `src/shared/src`. Tài liệu: `docs/API.md` (91 dòng), `docs/openapi.yaml` (745), `docs/AZURE_SETUP.md` (148, 6 mục `[CẦN XÁC MINH]`). Kiểm tra kết nối Azure staging: CHƯA CHẠY (chưa tạo tài nguyên Azure — để P9).
+- Tiêu chí P5 1–5: ✔. Kết luận: PASS.

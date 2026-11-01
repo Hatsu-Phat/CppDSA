@@ -2,6 +2,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { JudgeResult } from '@cppdsa/shared';
 import { buildApp } from '../src/app';
 import { hashPassword } from '../src/utils/security';
 
@@ -29,6 +30,8 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
   let assignmentTemplateId: string;
   let assignmentFreeId: string;
   let hiddenTestId: string;
+  let simulatedNow = new Date('2026-11-01T10:00:00.000Z');
+  let defaultPwdHash: string;
   const CANARY_SECRET_STRING = 'CANARY_HIDDEN_DATA_XYZ_98765';
 
   beforeAll(async () => {
@@ -187,6 +190,7 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     // 3. Create Fastify App
     app = buildApp({
       pool,
+      now: () => simulatedNow,
       config: {
         graderUrl: mockGraderUrl,
         graderSecret: GRADER_SECRET,
@@ -202,7 +206,7 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     await app.ready();
 
     // 4. Seed test users
-    const defaultPwdHash = await hashPassword('Password123!');
+    defaultPwdHash = await hashPassword('Password123!');
 
     // Lecturer A
     const resLA = await pool.query(
@@ -407,7 +411,82 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     const body = res.json();
     expect(body.successCount).toBe(3); // 2026001, 2026002, 2026005
     expect(body.errorCount).toBe(2); // row 4 empty name, row 5 duplicate code
+    expect(body.errors[0].error).not.toContain('syntax error');
+    expect(body.errors[1].error).not.toContain('syntax error');
+
+    // Verify createdStudents and students list
+    expect(body.students).toBeDefined();
+    expect(body.createdStudents).toHaveLength(1);
+    const createdStudent = body.createdStudents[0];
+    expect(createdStudent.studentCode).toBe('2026005');
+    expect(createdStudent.email).toBe('s5@cppdsa.local');
+    expect(createdStudent.temporaryPassword).toBeDefined();
+
+    const existingStudent = body.students.find((s: any) => s.studentCode === '2026001');
+    expect(existingStudent.status).toBe('existing');
+    expect(existingStudent.temporaryPassword).toBeUndefined();
+
+    // Verify student 2026005 can login with temporary password and must change password
+    const s5LoginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 's5@cppdsa.local', password: createdStudent.temporaryPassword },
+    });
+    expect(s5LoginRes.statusCode).toBe(200);
+    expect(s5LoginRes.json().user.mustChangePassword).toBe(true);
+
+    const s5Cookie = (s5LoginRes.headers['set-cookie'] as string).split(';')[0];
+    const s5AccessBlocked = await app.inject({
+      method: 'GET',
+      url: '/api/classrooms',
+      headers: { cookie: s5Cookie },
+    });
+    expect(s5AccessBlocked.statusCode).toBe(403);
+    expect(s5AccessBlocked.json().error).toBe('PASSWORD_CHANGE_REQUIRED');
   });
+
+  it('enforces CSV 500 rows limit boundary via API (500 data lines accepted, 501 rejected with 400 CSV_TOO_MANY_ROWS)', async () => {
+    const crRes = await app.inject({
+      method: 'POST',
+      url: '/api/classrooms',
+      headers: { cookie: lecturerA.cookie },
+      payload: { name: 'Classroom CSV 500 Limit' },
+    });
+    const cId = crRes.json().classroom.id;
+
+    // Pre-insert 500 users so CSV import processes them without 500 individual bcrypt hashes
+    const userValues: string[] = [];
+    for (let i = 1; i <= 500; i++) {
+      userValues.push(
+        `('c500_${i}@example.com', '${defaultPwdHash}', 'Student ${i}', 'STUDENT', false)`
+      );
+    }
+    await pool.query(
+      `INSERT INTO users (email, password_hash, full_name, role, must_change_password) VALUES ${userValues.join(',')}`
+    );
+
+    let csv500 = 'student_code,full_name,email\n';
+    for (let i = 1; i <= 500; i++) {
+      csv500 += `C500_${String(i).padStart(4, '0')},Student ${i},c500_${i}@example.com\n`;
+    }
+    const res500 = await app.inject({
+      method: 'POST',
+      url: `/api/classrooms/${cId}/students/import`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { csv: csv500 },
+    });
+    expect(res500.statusCode).toBe(200);
+
+    const csv501 = csv500 + 'C500_0501,Student 501,c500_501@example.com\n';
+    const res501 = await app.inject({
+      method: 'POST',
+      url: `/api/classrooms/${cId}/students/import`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { csv: csv501 },
+    });
+    expect(res501.statusCode).toBe(400);
+    expect(res501.json().error).toBe('CSV_TOO_MANY_ROWS');
+  }, 30000);
 
   it('[TEST_STUDENTS_LIST] lists enrolled students in classroom', async () => {
     const res = await app.inject({
@@ -716,6 +795,53 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     expect(resOver.json().error).toBe('PAYLOAD_TOO_LARGE');
   });
 
+  it('enforces maximum 50 hidden test cases per assignment boundary (50 accepted 201, 51st rejected 400)', async () => {
+    const newAssignRes = await app.inject({
+      method: 'POST',
+      url: `/api/classrooms/${classroomAId}/assignments`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        title: 'Assignment For 50 Tests Boundary',
+        mode: 'FREE',
+        deadline: new Date(Date.now() + 86400000).toISOString(),
+        entryPointSpec: {
+          harness: '#include <iostream>\nint main(){ return solve(); }',
+          entry: { type: 'function', name: 'solve' },
+        },
+      },
+    });
+    expect(newAssignRes.statusCode).toBe(201);
+    const assignId = newAssignRes.json().assignment.id;
+
+    for (let i = 1; i <= 50; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/assignments/${assignId}/tests`,
+        headers: { cookie: lecturerA.cookie },
+        payload: {
+          inputData: `input_${i}\n`,
+          expectedOutput: `expected_${i}\n`,
+          isHidden: true,
+        },
+      });
+      expect(res.statusCode).toBe(201);
+    }
+
+    // 51st hidden test case must be rejected
+    const res51 = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assignId}/tests`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        inputData: 'input_51\n',
+        expectedOutput: 'expected_51\n',
+        isHidden: true,
+      },
+    });
+    expect(res51.statusCode).toBe(400);
+    expect(res51.json().error).toBe('TOO_MANY_TEST_CASES');
+  });
+
   it('[TEST_CASES_LIST] lists all test cases for assignment (Lecturer only)', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -786,22 +912,42 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     expect(receivedGraderJobs[0].mode).toBe('template');
   });
 
-  it('enforces student code 64 KB limit boundary on submission', async () => {
-    const code64k = 'int x = 0; /* ' + 'A'.repeat(65530) + ' */';
-    expect(Buffer.byteLength(code64k, 'utf8')).toBeGreaterThan(65536);
+  it('enforces student code 64 KB limit boundary on submission (65536 bytes accepted 201, 65537 bytes rejected 413)', async () => {
+    // 1. Exactly 65536 bytes
+    const base = 'int solve(int a, int b) { /* ';
+    const end = ' */ return a + b; }';
+    const padding = 'X'.repeat(65536 - Buffer.byteLength(base + end, 'utf8'));
+    const codeExact64Kb = base + padding + end;
+    expect(Buffer.byteLength(codeExact64Kb, 'utf8')).toBe(65536);
 
-    const res = await app.inject({
+    const resOk = await app.inject({
       method: 'POST',
       url: `/api/assignments/${assignmentTemplateId}/submissions`,
       headers: { cookie: student1.cookie },
       payload: {
         regions: {
-          solve: code64k,
+          solve: codeExact64Kb,
         },
       },
     });
-    expect(res.statusCode).toBe(413);
-    expect(res.json().error).toBe('PAYLOAD_TOO_LARGE');
+    expect(resOk.statusCode).toBe(201);
+
+    // 2. 65537 bytes (1 byte over)
+    const codeOver64Kb = codeExact64Kb + 'Y';
+    expect(Buffer.byteLength(codeOver64Kb, 'utf8')).toBe(65537);
+
+    const resOver = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assignmentTemplateId}/submissions`,
+      headers: { cookie: student1.cookie },
+      payload: {
+        regions: {
+          solve: codeOver64Kb,
+        },
+      },
+    });
+    expect(resOver.statusCode).toBe(413);
+    expect(resOver.json().error).toBe('PAYLOAD_TOO_LARGE');
   });
 
   it('rejects submission with missing template regions (400)', async () => {
@@ -826,8 +972,8 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
       verdict: 'AC',
       score: 1.0,
       tests: [
-        { index: 1, verdict: 'AC', timeMs: 12, memoryKb: 1024 },
-        { index: 2, verdict: 'AC', timeMs: 15, memoryKb: 1024 },
+        { index: 0, verdict: 'AC', timeMs: 12, memoryKb: 1024 },
+        { index: 1, verdict: 'AC', timeMs: 15, memoryKb: 1024 },
       ],
       compileMessage: '',
     };
@@ -865,7 +1011,7 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
         status: 'DONE',
         verdict: 'AC',
         score: 1.0,
-        tests: [{ index: 1, verdict: 'AC', timeMs: 12, memoryKb: 1024 }],
+        tests: [{ index: 0, verdict: 'AC', timeMs: 12, memoryKb: 1024 }],
       },
     });
 
@@ -877,6 +1023,163 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
       [submission1Id]
     );
     expect(countAfter.rows[0].count).toBe(countBefore.rows[0].count);
+  });
+
+  it('verifies 0-based indexing with 4 hidden tests [AC, WA, TLE, AC] preserving order and 2/4 passed', async () => {
+    // 1. Create assignment with 4 hidden tests
+    const assignRes = await app.inject({
+      method: 'POST',
+      url: `/api/classrooms/${classroomAId}/assignments`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        title: '4-Test Assignment',
+        description: 'Testing 4 test cases',
+        mode: 'FREE',
+        deadline: new Date(Date.now() + 86400000).toISOString(),
+        entryPointSpec: {
+          harness: '#include <iostream>\nint main(){ return solve(); }',
+          entry: { type: 'function', name: 'solve' },
+        },
+      },
+    });
+    const assign4Id = assignRes.json().assignment.id;
+
+    for (let i = 1; i <= 4; i++) {
+      await app.inject({
+        method: 'POST',
+        url: `/api/assignments/${assign4Id}/tests`,
+        headers: { cookie: lecturerA.cookie },
+        payload: {
+          inputData: `input_${i}\n`,
+          expectedOutput: `expected_${i}\n`,
+          isHidden: true,
+          orderIndex: i,
+        },
+      });
+    }
+
+    // 2. Submit solution
+    const subRes = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assign4Id}/submissions`,
+      headers: { cookie: student1.cookie },
+      payload: {
+        studentSource: 'int solve(){ return 0; }',
+        entry: { type: 'function', name: 'solve' },
+      },
+    });
+    expect(subRes.statusCode).toBe(201);
+    const sub4Id = subRes.json().submission.id;
+
+    // 3. Construct JudgeResult contract conforming to docs/GRADER.md
+    const contractResult: JudgeResult = {
+      submissionId: sub4Id,
+      status: 'DONE',
+      verdict: 'WA',
+      score: 0.5,
+      tests: [
+        { index: 0, verdict: 'AC', timeMs: 10, memoryKb: 1024 },
+        { index: 1, verdict: 'WA', timeMs: 15, memoryKb: 1024 },
+        { index: 2, verdict: 'TLE', timeMs: 1005, memoryKb: 1024 },
+        { index: 3, verdict: 'AC', timeMs: 12, memoryKb: 1024 },
+      ],
+      compileMessage: '',
+    };
+
+    const callbackRes = await app.inject({
+      method: 'POST',
+      url: '/api/internal/grader-callback',
+      headers: { 'x-grader-secret': GRADER_SECRET },
+      payload: contractResult,
+    });
+    expect(callbackRes.statusCode).toBe(200);
+
+    // 4. Verify 4 rows in submission_test_results in exact order
+    const dbResults = await pool.query(
+      `SELECT r.verdict, t.order_index
+       FROM submission_test_results r
+       JOIN test_cases t ON r.test_case_id = t.id
+       WHERE r.submission_id = $1
+       ORDER BY t.order_index ASC`,
+      [sub4Id]
+    );
+    expect(dbResults.rows).toHaveLength(4);
+    expect(dbResults.rows[0].verdict).toBe('AC');
+    expect(dbResults.rows[1].verdict).toBe('WA');
+    expect(dbResults.rows[2].verdict).toBe('TLE');
+    expect(dbResults.rows[3].verdict).toBe('AC');
+
+    const dbSub = await pool.query(
+      'SELECT status, score, passed_tests, total_tests FROM submissions WHERE id = $1',
+      [sub4Id]
+    );
+    expect(dbSub.rows[0].status).toBe('COMPLETED');
+    expect(dbSub.rows[0].passed_tests).toBe(2);
+    expect(dbSub.rows[0].total_tests).toBe(4);
+    expect(Number(dbSub.rows[0].score)).toBe(0.5);
+
+    // 5. Test out-of-bounds index rejects and sets SYSTEM_ERROR
+    const subBadRes = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assign4Id}/submissions`,
+      headers: { cookie: student2.cookie },
+      payload: {
+        studentSource: 'int solve(){ return 0; }',
+        entry: { type: 'function', name: 'solve' },
+      },
+    });
+    expect(subBadRes.statusCode).toBe(201);
+    const subBadId = subBadRes.json().submission.id;
+
+    const outOfBoundsCallback = await app.inject({
+      method: 'POST',
+      url: '/api/internal/grader-callback',
+      headers: { 'x-grader-secret': GRADER_SECRET },
+      payload: {
+        submissionId: subBadId,
+        status: 'DONE',
+        verdict: 'AC',
+        score: 1.0,
+        tests: [{ index: 4, verdict: 'AC', timeMs: 10, memoryKb: 1024 }], // 4 is out of bounds for 4 tests (0..3)
+      },
+    });
+    expect(outOfBoundsCallback.statusCode).toBe(400);
+
+    const badSubDb = await pool.query('SELECT status FROM submissions WHERE id = $1', [subBadId]);
+    expect(badSubDb.rows[0].status).toBe('SYSTEM_ERROR');
+
+    // 6. Test duplicate index rejects and sets SYSTEM_ERROR
+    const subDupRes = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assign4Id}/submissions`,
+      headers: { cookie: student2.cookie },
+      payload: {
+        studentSource: 'int solve(){ return 0; }',
+        entry: { type: 'function', name: 'solve' },
+      },
+    });
+    expect(subDupRes.statusCode).toBe(201);
+    const subDupId = subDupRes.json().submission.id;
+
+    const dupCallback = await app.inject({
+      method: 'POST',
+      url: '/api/internal/grader-callback',
+      headers: { 'x-grader-secret': GRADER_SECRET },
+      payload: {
+        submissionId: subDupId,
+        status: 'DONE',
+        verdict: 'AC',
+        score: 1.0,
+        tests: [
+          { index: 0, verdict: 'AC', timeMs: 10, memoryKb: 1024 },
+          { index: 0, verdict: 'AC', timeMs: 10, memoryKb: 1024 },
+        ],
+      },
+    });
+    expect(dupCallback.statusCode).toBe(400);
+
+    const dupSubDb = await pool.query('SELECT status FROM submissions WHERE id = $1', [subDupId]);
+    expect(dupSubDb.rows[0].status).toBe('SYSTEM_ERROR');
   });
 
   it('[TEST_SUBMISSIONS_LIST] lists submissions for student (only own submissions)', async () => {
@@ -926,34 +1229,111 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
   // DEADLINE & LATE SUBMISSION & MAX SCORE
   // ==========================================
 
-  it('[TEST_GRADES_EXPORT_CSV] verifies deadline boundary, late flag, and max score before deadline', async () => {
+  it('[TEST_GRADES_EXPORT_CSV] verifies deadline boundary, late flag, and max score via API without direct SQL insert', async () => {
     // 1. Create assignment with fixed deadline
     const deadlineTime = new Date('2026-11-01T12:00:00.000Z');
-    const assignRes = await pool.query(
-      `INSERT INTO assignments (classroom_id, title, mode, time_limit_ms, memory_limit_mb, deadline)
-       VALUES ($1, 'Deadline Test Assignment', 'FREE', 1000, 256, $2) RETURNING id`,
-      [classroomAId, deadlineTime]
-    );
-    const testAssignId = assignRes.rows[0].id;
+    const assignRes = await app.inject({
+      method: 'POST',
+      url: `/api/classrooms/${classroomAId}/assignments`,
+      headers: { cookie: lecturerA.cookie },
+      payload: {
+        title: 'Deadline Test Assignment',
+        description: 'Testing deadline boundary',
+        mode: 'FREE',
+        timeLimitMs: 1000,
+        memoryLimitMb: 256,
+        deadline: deadlineTime.toISOString(),
+        entryPointSpec: {
+          harness: '#include <iostream>\nint main(){ return solve(); }',
+          entry: { type: 'function', name: 'solve' },
+        },
+      },
+    });
+    expect(assignRes.statusCode).toBe(201);
+    const testAssignId = assignRes.json().assignment.id;
 
-    // 2. Submit exactly at deadline (considered on-time)
-    const onTimeSubRes = await pool.query(
-      `INSERT INTO submissions (assignment_id, student_id, submitted_code, status, score, is_late, created_at)
-       VALUES ($1, $2, 'code1', 'COMPLETED', 0.80, false, $3) RETURNING id`,
-      [testAssignId, student2.id, deadlineTime]
-    );
-    expect(onTimeSubRes.rowCount).toBe(1);
+    // Add hidden test
+    await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${testAssignId}/tests`,
+      headers: { cookie: lecturerA.cookie },
+      payload: { inputData: '1\n', expectedOutput: '1\n', isHidden: true },
+    });
 
-    // 3. Submit 1 ms after deadline (considered late)
-    const lateTime = new Date(deadlineTime.getTime() + 1);
-    const lateSubRes = await pool.query(
-      `INSERT INTO submissions (assignment_id, student_id, submitted_code, status, score, is_late, created_at)
-       VALUES ($1, $2, 'code2', 'COMPLETED', 1.00, true, $3) RETURNING id`,
-      [testAssignId, student2.id, lateTime]
-    );
-    expect(lateSubRes.rowCount).toBe(1);
+    // 2. Submit exactly at deadline (simulatedNow = deadlineTime) -> considered on-time
+    simulatedNow = new Date(deadlineTime.getTime());
+    const onTimeSubRes = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${testAssignId}/submissions`,
+      headers: { cookie: student2.cookie },
+      payload: {
+        studentSource: 'int solve(){ return 1; }',
+        entry: { type: 'function', name: 'solve' },
+      },
+    });
+    expect(onTimeSubRes.statusCode).toBe(201);
+    const onTimeSubId = onTimeSubRes.json().submission.id;
+    expect(onTimeSubRes.json().submission.isLate).toBe(false);
 
-    // 4. Export grades CSV
+    // Complete on-time submission with score 0.8
+    await app.inject({
+      method: 'POST',
+      url: '/api/internal/grader-callback',
+      headers: { 'x-grader-secret': GRADER_SECRET },
+      payload: {
+        submissionId: onTimeSubId,
+        status: 'DONE',
+        verdict: 'AC',
+        score: 0.8,
+        tests: [{ index: 0, verdict: 'AC', timeMs: 10, memoryKb: 1024 }],
+      },
+    });
+
+    // 3. Submit 1 ms after deadline (simulatedNow = deadlineTime + 1ms) -> considered late
+    simulatedNow = new Date(deadlineTime.getTime() + 1);
+    const lateSubRes = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${testAssignId}/submissions`,
+      headers: { cookie: student2.cookie },
+      payload: {
+        studentSource: 'int solve(){ return 1; }',
+        entry: { type: 'function', name: 'solve' },
+      },
+    });
+    expect(lateSubRes.statusCode).toBe(201);
+    const lateSubId = lateSubRes.json().submission.id;
+    expect(lateSubRes.json().submission.isLate).toBe(true);
+
+    // Complete late submission with higher score 1.0
+    await app.inject({
+      method: 'POST',
+      url: '/api/internal/grader-callback',
+      headers: { 'x-grader-secret': GRADER_SECRET },
+      payload: {
+        submissionId: lateSubId,
+        status: 'DONE',
+        verdict: 'AC',
+        score: 1.0,
+        tests: [{ index: 0, verdict: 'AC', timeMs: 10, memoryKb: 1024 }],
+      },
+    });
+
+    // 4. Verify submissions list via API
+    const listRes = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${testAssignId}/submissions`,
+      headers: { cookie: student2.cookie },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const subs = listRes.json().submissions;
+    const onTimeItem = subs.find((s: any) => s.id === onTimeSubId);
+    const lateItem = subs.find((s: any) => s.id === lateSubId);
+    expect(onTimeItem.isLate).toBe(false);
+    expect(Number(onTimeItem.score)).toBe(0.8);
+    expect(lateItem.isLate).toBe(true);
+    expect(Number(lateItem.score)).toBe(1.0);
+
+    // 5. Export grades CSV
     const csvRes = await app.inject({
       method: 'GET',
       url: `/api/classrooms/${classroomAId}/grades/csv?assignmentId=${testAssignId}`,
@@ -1188,6 +1568,81 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
       recoverySubId,
     ]);
     expect(check2.rows[0].status).toBe('SYSTEM_ERROR');
+  });
+
+  // ==========================================
+  // RATE LIMITING TESTS
+  // ==========================================
+
+  it('enforces login rate limit (10 attempts/min/IP allowed, 11th attempt returns 429)', async () => {
+    const rateLimitIp = '192.168.100.50';
+    for (let i = 1; i <= 10; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        remoteAddress: rateLimitIp,
+        payload: { email: 'nonexistent@example.com', password: 'wrong' },
+      });
+      expect(res.statusCode).toBe(401);
+    }
+
+    // 11th attempt from same IP
+    const res11 = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      remoteAddress: rateLimitIp,
+      payload: { email: 'nonexistent@example.com', password: 'wrong' },
+    });
+    expect(res11.statusCode).toBe(429);
+    expect(res11.json().statusCode).toBe(429);
+  });
+
+  it('enforces submission rate limit (6 submissions/min/user allowed, 7th attempt returns 429)', async () => {
+    const pwdHash = await hashPassword('Password123!');
+    const rlStudentRes = await pool.query(
+      `INSERT INTO users (email, password_hash, full_name, role, must_change_password)
+       VALUES ('ratelimit_student@cppdsa.local', $1, 'RL Student', 'STUDENT', false) RETURNING id`,
+      [pwdHash]
+    );
+    const rlStudentId = rlStudentRes.rows[0].id;
+    await pool.query(
+      `INSERT INTO classroom_enrollments (classroom_id, student_id, student_code)
+       VALUES ($1, $2, 'RL001')`,
+      [classroomAId, rlStudentId]
+    );
+
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'ratelimit_student@cppdsa.local', password: 'Password123!' },
+    });
+    const rlCookie = (loginRes.headers['set-cookie'] as string).split(';')[0];
+
+    for (let i = 1; i <= 6; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/assignments/${assignmentFreeId}/submissions`,
+        headers: { cookie: rlCookie },
+        payload: {
+          studentSource: `int solve(){ return ${i}; }`,
+          entry: { type: 'function', name: 'solve' },
+        },
+      });
+      expect(res.statusCode).toBe(201);
+    }
+
+    // 7th submission
+    const res7 = await app.inject({
+      method: 'POST',
+      url: `/api/assignments/${assignmentFreeId}/submissions`,
+      headers: { cookie: rlCookie },
+      payload: {
+        studentSource: 'int solve(){ return 7; }',
+        entry: { type: 'function', name: 'solve' },
+      },
+    });
+    expect(res7.statusCode).toBe(429);
+    expect(res7.json().statusCode).toBe(429);
   });
 
   // ==========================================

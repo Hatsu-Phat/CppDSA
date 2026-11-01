@@ -207,7 +207,50 @@ paths:
               type: string
       responses:
         '200':
-          description: Import results with per-row status
+          description: Import results with per-row status and temporary credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  successCount:
+                    type: integer
+                  errorCount:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        row:
+                          type: integer
+                        error:
+                          type: string
+                  students:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentCode:
+                          type: string
+                        email:
+                          type: string
+                        status:
+                          type: string
+                          enum: [created, existing]
+                        temporaryPassword:
+                          type: string
+                  createdStudents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentCode:
+                          type: string
+                        email:
+                          type: string
+                        temporaryPassword:
+                          type: string
         '400':
           description: CSV exceeds limit or invalid format
         '403':
@@ -680,6 +723,7 @@ paths:
                     properties:
                       index:
                         type: integer
+                        description: 0-based index corresponding to hiddenTests order (0..N-1)
                       verdict:
                         type: string
                       timeMs:
@@ -691,6 +735,8 @@ paths:
       responses:
         '200':
           description: Callback processed successfully (idempotent)
+        '400':
+          description: Invalid or duplicate test indices
         '401':
           description: Invalid or missing X-Grader-Secret
         '404':

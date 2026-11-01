@@ -25,10 +25,15 @@ declare module 'fastify' {
 export interface AppOptions {
   pool?: pg.Pool | any;
   config?: Partial<ApiConfig>;
+  now?: () => Date;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
-  const cfg: ApiConfig = { ...defaultConfig, ...options.config };
+  const cfg: ApiConfig = {
+    ...defaultConfig,
+    ...options.config,
+    now: options.now || options.config?.now || defaultConfig.now,
+  };
   const pool = options.pool || new pg.Pool({ connectionString: cfg.databaseUrl, max: 5 });
 
   const app = Fastify({
@@ -43,6 +48,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   app.register(fastifyRateLimit, {
     global: false,
+    hook: 'preHandler',
   });
 
   // 2. Authentication hook (runs on every request)

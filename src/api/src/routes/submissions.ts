@@ -82,7 +82,7 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
         entry?: { type: 'function' | 'method'; name: string; className?: string };
       };
 
-      const now = new Date();
+      const now = config.now ? config.now() : new Date();
       const isLate = now.getTime() > new Date(assignment.deadline).getTime();
 
       let submittedCode = '';
@@ -175,8 +175,8 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
 
       // Insert submission
       const subRes = await pool.query(
-        `INSERT INTO submissions (assignment_id, student_id, submitted_code, entry_point_declaration, status, is_late)
-         VALUES ($1, $2, $3, $4, 'PENDING', $5)
+        `INSERT INTO submissions (assignment_id, student_id, submitted_code, entry_point_declaration, status, is_late, created_at)
+         VALUES ($1, $2, $3, $4, 'PENDING', $5, $6)
          RETURNING *`,
         [
           assignmentId,
@@ -184,6 +184,7 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
           submittedCode,
           entryPointDeclaration ? JSON.stringify(entryPointDeclaration) : null,
           isLate,
+          now,
         ]
       );
 

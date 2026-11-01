@@ -197,18 +197,33 @@ export const classroomRoutes: FastifyPluginAsync<ClassroomRouteOptions> = async 
 
     const { validRows, errors } = parseResult;
     let successCount = 0;
+    const students: Array<{
+      studentCode: string;
+      email: string;
+      temporaryPassword?: string;
+      status: 'created' | 'existing';
+    }> = [];
+    const createdStudents: Array<{
+      studentCode: string;
+      email: string;
+      temporaryPassword: string;
+    }> = [];
 
     for (const student of validRows) {
       try {
         // Check if user exists
         let studentUserId: string;
+        let isNewUser = false;
+        let tempPassword = '';
+
         const userRes = await pool.query('SELECT id, role FROM users WHERE email = $1', [
           student.email.toLowerCase(),
         ]);
 
         if (userRes.rowCount === 0) {
+          isNewUser = true;
           // Generate temporary password
-          const tempPassword = `Temp@${crypto.randomInt(100000, 999999)}`;
+          tempPassword = `Temp@${crypto.randomInt(100000, 999999)}`;
           const hash = await hashPassword(tempPassword);
           const newUserRes = await pool.query(
             `INSERT INTO users (email, password_hash, full_name, role, must_change_password)
@@ -232,16 +247,35 @@ export const classroomRoutes: FastifyPluginAsync<ClassroomRouteOptions> = async 
 
         if (enrollRes.rowCount! > 0) {
           successCount++;
+          if (isNewUser) {
+            students.push({
+              studentCode: student.studentCode,
+              email: student.email,
+              temporaryPassword: tempPassword,
+              status: 'created',
+            });
+            createdStudents.push({
+              studentCode: student.studentCode,
+              email: student.email,
+              temporaryPassword: tempPassword,
+            });
+          } else {
+            students.push({
+              studentCode: student.studentCode,
+              email: student.email,
+              status: 'existing',
+            });
+          }
         } else {
           errors.push({
             row: student.row,
             error: `Sinh viên với mã ${student.studentCode} đã tồn tại trong lớp này`,
           });
         }
-      } catch (rowErr: any) {
+      } catch {
         errors.push({
           row: student.row,
-          error: rowErr.message || 'Lỗi khi lưu sinh viên',
+          error: 'Lỗi khi lưu thông tin sinh viên',
         });
       }
     }
@@ -250,6 +284,8 @@ export const classroomRoutes: FastifyPluginAsync<ClassroomRouteOptions> = async 
       successCount,
       errorCount: errors.length,
       errors,
+      students,
+      createdStudents,
     });
   });
 

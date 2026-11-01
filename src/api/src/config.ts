@@ -16,6 +16,7 @@ export interface ApiConfig {
   maxTestCaseBytes: number;
   maxTestCasesPerAssignment: number;
   maxCsvRows: number;
+  now?: () => Date;
 }
 
 export const config: ApiConfig = {
@@ -32,4 +33,5 @@ export const config: ApiConfig = {
   maxTestCaseBytes: Number(process.env.MAX_TEST_CASE_BYTES || 1048576),
   maxTestCasesPerAssignment: Number(process.env.MAX_TEST_CASES_PER_ASSIGNMENT || 50),
   maxCsvRows: Number(process.env.MAX_CSV_ROWS || 500),
+  now: () => new Date(),
 };

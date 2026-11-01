@@ -34,7 +34,7 @@ Tất cả các kiểm tra quyền được thực hiện nghiêm ngặt tại B
 | Đối tượng dữ liệu | Quyền của Giảng viên (Lecturer) | Quyền của Sinh viên (Student) |
 |---|---|---|
 | **Lớp học (Classrooms)** | CRUD đầy đủ lớp do mình sở hữu (`lecturer_id = user.id`). Bị cấm 403 khi thao tác trên lớp của giảng viên khác. | Chỉ được xem (`GET`) thông tin các lớp mà mình đã được ghi danh (`classroom_enrollments`). Không được tạo/sửa/xóa. |
-| **Sinh viên trong lớp** | Import CSV, xem danh sách sinh viên, reset mật khẩu sinh viên trong lớp mình sở hữu. | Hoàn toàn không có quyền truy cập các endpoint quản lý sinh viên (403). |
+| **Sinh viên trong lớp** | Import CSV, xem danh sách sinh viên, reset mật khẩu sinh viên trong lớp mình sở hữu. Phản hồi import CSV trả danh sách `createdStudents` kèm `temporaryPassword` cho tài khoản mới (không lưu plain text, không ghi log); tài khoản đã có ghi rõ `status: "existing"` không kèm mật khẩu. | Hoàn toàn không có quyền truy cập các endpoint quản lý sinh viên (403). |
 | **Bài tập (Assignments)** | CRUD bài tập trong lớp mình sở hữu; thiết lập mode (TEMPLATE/FREE), TL, ML, deadline. | Xem danh sách và nội dung bài tập của lớp mình ghi danh; xem template/mô tả giao diện, ví dụ công khai, trạng thái nộp và hạn nộp. |
 | **Bộ kiểm thử ẩn (Hidden Tests)** | Thêm, sửa, xóa, xem danh sách toàn bộ test case (kể cả hidden test) của bài tập thuộc lớp mình. | **Tuyệt đối không được xem** test ẩn dưới bất kỳ hình thức nào (không có endpoint, không trả về trong đề hay submission). |
 | **Nộp bài (Submissions)** | Xem danh sách bài nộp của cả lớp, lọc theo bài/thời gian/trạng thái/điểm; xem mã nguồn sinh viên, log biên dịch, excerpt test. | Nộp bài cho bài tập lớp mình ghi danh; xem lịch sử bài nộp của chính mình; xem verdict, thời gian, bộ nhớ, điểm tổng. Không xem bài/điểm của bạn khác. |
@@ -83,7 +83,9 @@ Các giới hạn được thiết lập mặc định và cấu hình linh ho�
   - Mỗi request đến API kích hoạt kiểm tra không chặn (non-blocking) các bài nộp `PENDING` hoặc `RUNNING`.
   - Quá 2 phút: Gửi lại job (tối đa 2 lần).
   - Quá 2 lần retry: Đánh dấu `SYSTEM_ERROR`.
-- **Tính Idempotent của Callback:**
+- **Tính Idempotent của Callback và Chỉ số 0-based:**
   - Grader gửi kết quả về `POST /api/internal/grader-callback`.
   - Secret được kiểm tra bằng so sánh thời gian hằng `crypto.timingSafeEqual`. Nếu biến môi trường `GRADER_SECRET` trống → HTTP 503.
+  - **Chỉ số 0-based:** Mảng `tests[].index` từ Grader là chỉ số 0-based (`0, 1, ..., N - 1`), tương ứng trực tiếp với thứ tự mảng `hiddenTests` trong `JudgeJob`. API ánh xạ chính xác `tests[index]` vào test case tương ứng trong CSDL.
+  - **Kiểm tra tính hợp lệ của index:** Nếu Grader gửi `index` ngoài phạm vi (`index < 0` hoặc `index >= N`) hoặc trùng lặp chỉ số `index`, API từ chối callback với HTTP 400 và cập nhật trạng thái bài nộp trong DB thành `SYSTEM_ERROR`.
   - Nếu bài nộp đã ở trạng thái `COMPLETED` hoặc `SYSTEM_ERROR` (do retry hoặc callback gửi lại), API ghi nhận thành công 200 mà không nhân đôi dữ liệu trong `submission_test_results`.

@@ -72,26 +72,51 @@ export const internalRoutes: FastifyPluginAsync<InternalRouteOptions> = async (a
       );
       const hiddenTests = testsRes.rows;
 
-      // Insert test results
-      if (Array.isArray(body.tests)) {
-        for (let i = 0; i < body.tests.length; i++) {
-          const t = body.tests[i];
-          // Match by index: 1-based or 0-based index or position i
-          let testCaseId: string | null = null;
-          if (t.index !== undefined && t.index >= 1 && t.index <= hiddenTests.length) {
-            testCaseId = hiddenTests[t.index - 1].id;
-          } else if (i < hiddenTests.length) {
-            testCaseId = hiddenTests[i].id;
-          }
+      // Validate test indices if tests are present
+      if (Array.isArray(body.tests) && body.tests.length > 0) {
+        const seenIndices = new Set<number>();
+        let hasInvalidIndex = false;
 
-          if (testCaseId) {
-            await client.query(
-              `INSERT INTO submission_test_results (submission_id, test_case_id, verdict, execution_time_ms, memory_used_kb)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (submission_id, test_case_id) DO NOTHING`,
-              [body.submissionId, testCaseId, t.verdict, t.timeMs, t.memoryKb]
-            );
+        for (const t of body.tests) {
+          if (
+            typeof t.index !== 'number' ||
+            !Number.isInteger(t.index) ||
+            t.index < 0 ||
+            t.index >= hiddenTests.length ||
+            seenIndices.has(t.index)
+          ) {
+            hasInvalidIndex = true;
+            break;
           }
+          seenIndices.add(t.index);
+        }
+
+        if (hasInvalidIndex) {
+          await client.query(
+            `UPDATE submissions
+             SET status = 'SYSTEM_ERROR',
+                 compile_output = $1,
+                 finished_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $2`,
+            ['Chỉ số test không hợp lệ hoặc bị trùng lặp từ grader', body.submissionId]
+          );
+          await client.query('COMMIT');
+          return reply.code(400).send({
+            error: 'BAD_REQUEST',
+            message: 'Chỉ số test không hợp lệ hoặc bị trùng lặp',
+          });
+        }
+
+        // Insert test results using 0-based index
+        for (const t of body.tests) {
+          const testCaseId = hiddenTests[t.index].id;
+          await client.query(
+            `INSERT INTO submission_test_results (submission_id, test_case_id, verdict, execution_time_ms, memory_used_kb)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (submission_id, test_case_id) DO NOTHING`,
+            [body.submissionId, testCaseId, t.verdict, t.timeMs, t.memoryKb]
+          );
         }
       }
 
