@@ -200,3 +200,37 @@ Trong task tiếp theo khi triển khai spike lên Render:
    - Thời gian khởi động nguội (cold start wake-up time).
    - Độ lệch thời gian chạy (mean, stddev, spread) qua 10 lần liên tiếp.
    - Quyết định số lượng job chấm song song tối ưu (đề xuất 1–2 jobs) để tránh nghẽn CPU.
+
+---
+
+## 7. Đóng gói Render Free Web Service và Hướng dẫn Thực nghiệm (Task T-0004)
+
+### 7.1. Cấu trúc đóng gói Web Service (`spike/p2/server.mjs`)
+- **Lắng nghe cổng:** Cấu hình tự động theo biến `$PORT` của Render (mặc định 10000 trên `0.0.0.0`).
+- **Xác thực bí mật:** Header `X-Spike-Secret` được so sánh với biến môi trường `SPIKE_SECRET` bằng phép so sánh thời gian hằng `crypto.timingSafeEqual` nhằm loại trừ rủi ro tấn công timing attack. Khi biến `SPIKE_SECRET` không được thiết lập hoặc để trống, server chủ động từ chối mọi yêu cầu vào các endpoint nhạy cảm bằng mã HTTP 503 Service Unavailable.
+- **Khóa đơn tiến trình (Concurrency Lock):** Chỉ cho phép duy nhất 1 tác vụ chạy test suite hoặc benchmark tại cùng một thời điểm. Mọi yêu cầu trùng lặp trong lúc đang bận sẽ nhận ngay HTTP 409 Conflict.
+- **Hạn chót cứng (Hard Timeout):** Giới hạn tối đa 5 phút cho mỗi tiến trình con (`run-suite.mjs` hoặc `bench.mjs`) để bảo vệ tài nguyên container không bị treo vĩnh viễn.
+
+### 7.2. Các Endpoint khả dụng
+| Tuyến đường (Route) | Phương thức | Xác thực | Mục đích |
+|:---|:---:|:---:|:---|
+| `/health` | `GET` | Không | Render health check và đo lường thời gian cold start từ bên ngoài. Trả về `{ status: "ok", uptimeMs }`. |
+| `/env-probe` | `GET` | `X-Spike-Secret` | Thu thập thông tin kernel/môi trường Render (`uname -a`, CPU count, tổng RAM, cgroup memory limit, UID/GID, Seccomp/NoNewPrivs/CapEff trong `/proc/self/status`) và kết quả thử nhanh trực tiếp trong sandbox (`setuid`, `setrlimit`, `seccomp_load`). |
+| `/run-suite` | `POST` | `X-Spike-Secret` | Kích hoạt bộ 38 ca kiểm thử bảo mật và phân loại verdict (`run-suite.mjs`), trả về `{ exitCode, durationMs, passed, failed, outputTail }`. |
+| `/bench` | `POST` | `X-Spike-Secret` | Chạy 10 lần đo thời gian bài toán CPU-bound (`bench.mjs`), trả về thống kê min/max/mean/stddev. |
+
+### 7.3. Hướng dẫn Triển khai và Đo đạc trên Render Free
+1. **Triển khai Web Service:**
+   - Tạo mới Web Service trên dashboard Render từ repo GitHub, chỉ định Dockerfile tại `spike/p2/Dockerfile`.
+   - Cấu hình Environment Variable: `SPIKE_SECRET=<chuoi_bi_mat_ngau_nhien>`.
+   - Chọn gói miễn phí (Free instance: 0.1 CPU, 512 MB RAM).
+2. **Đo Cold Start (khi instance chuyển sang chế độ ngủ sau 15 phút không có traffic):**
+   ```bash
+   node spike/p2/remote-check.mjs https://<service-name>.onrender.com --health-only
+   ```
+   Script sẽ ghi nhận thời gian tính từ lúc bắt đầu gửi HTTP GET `/health` đầu tiên đến khi nhận được phản hồi hoàn tất.
+3. **Đo Kiểm tra Toàn diện từ Bên ngoài:**
+   ```bash
+   SPIKE_SECRET=<chuoi_bi_mat_ngau_nhien> node spike/p2/remote-check.mjs https://<service-name>.onrender.com
+   ```
+   Script sẽ tự động chạy theo thứ tự: đo Cold Start `/health` → gọi `/env-probe` kiểm tra Seccomp/Rlimit/UID → gọi `/run-suite` chạy 38 ca → gọi `/bench` đo 10 lần CPU-bound, và in toàn bộ kết quả tóm tắt dưới dạng JSON có cấu trúc.

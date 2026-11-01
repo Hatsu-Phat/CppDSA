@@ -17,10 +17,13 @@ WORKDIR /app
 # Sao chép toàn bộ mã nguồn spike, launcher, cases và scripts vào image
 COPY . /app
 
-# Biên dịch launcher C với libseccomp
+# Biên dịch launcher C và probe C với libseccomp
 RUN gcc -O2 -Wall -Wextra /app/launcher.c -lseccomp -o /usr/local/bin/launcher \
     && chmod 755 /usr/local/bin/launcher \
-    && chown root:root /usr/local/bin/launcher
+    && chown root:root /usr/local/bin/launcher \
+    && gcc -O2 -Wall -Wextra /app/probe.c -lseccomp -o /usr/local/bin/probe \
+    && chmod 755 /usr/local/bin/probe \
+    && chown root:root /usr/local/bin/probe
 
 # Phân quyền thư mục và tạo secret giả
 RUN mkdir -p /app/hidden_tests \
@@ -34,5 +37,6 @@ RUN mkdir -p /app/hidden_tests \
     && mkdir -p /run/lock && chmod 755 /run/lock && chown root:root /run/lock \
     && chown root:root /home/sandbox && chmod 755 /home/sandbox
 
+EXPOSE 10000
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "run-suite.mjs"]
+CMD ["node", "server.mjs"]
