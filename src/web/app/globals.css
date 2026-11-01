@@ -262,6 +262,26 @@ textarea.form-control {
   color: var(--success);
 }
 
+.badge-warning {
+  background-color: var(--warning-light);
+  color: var(--warning);
+}
+
+.badge-danger {
+  background-color: var(--danger-light);
+  color: var(--danger);
+}
+
+.badge-primary {
+  background-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.badge-secondary {
+  background-color: var(--neutral-200);
+  color: var(--neutral-700);
+}
+
 .tabs {
   display: flex;
   border-bottom: 2px solid var(--neutral-200);
@@ -323,4 +343,42 @@ textarea.form-control {
   overflow-x: auto;
   white-space: pre-wrap;
   margin: 0.5rem 0;
+  max-width: 100%;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 0.75rem;
+    width: 100%;
+  }
+
+  .navbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .navbar-nav {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: space-between;
+  }
+
+  .form-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
 }

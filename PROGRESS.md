@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P7
+CURRENT_PHASE: P8
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -37,3 +37,4 @@ CURRENT_PHASE: P7
 - 2026-11-01: P5 PASS (T-0007 vòng 2; vòng 1 FAIL: import không trả mật khẩu tạm, lệch index 0/1-based giữa grader và API, test deadline tautology, thiếu test biên). Merge `task/T-0007` → main. T-0004 vòng 2 trên Render: hết OOM/EAGAIN, bench đạt (độ lệch 1.56%, CPU/wall 0.148), run-suite 16/38 do CPU 0.15 → T-0004 vòng 3. SPIKE_SECRET của `cppdsa-spike` đã được Claude đặt lại (giá trị chỉ ở scratchpad phiên).
 - 2026-11-01: T-0004 vòng 3 (cuối): local 0 FAIL kể cả --cpus 0.15; Render: biên dịch bits/stdc++ 15.7 s, bench độ lệch 3.35%, run-suite không hoàn tất trong 5 phút. Dừng T-0004 (hết 3 vòng), báo người dùng: Render free khó đạt p95 ≤ 10 s; xử lý ở P8 hoặc đổi nơi chạy grader.
 - 2026-11-01: P6 PASS (T-0008 vòng 1; lượt agy bị ngắt do thiếu RAM, không có báo cáo bàn giao — Claude tự chạy lệnh 1, 2 và probe, đều đạt). Merge `task/T-0008` → main. Tiếp: P7 (T-0009).
+- 2026-11-01: P7 PASS (T-0009 vòng 2; vòng 1 FAIL: E2E chạm rate limit 6 lần/phút do dùng 1 sinh viên, lượt agy bị ngắt không có báo cáo). Merge `task/T-0009` → main. Tiếp: P8 (T-0010).

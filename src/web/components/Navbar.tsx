@@ -24,29 +24,40 @@ export default function Navbar({ user }: NavbarProps) {
     }
   };
 
+  const isLecturer = user?.role === 'LECTURER';
+  const roleUrl = isLecturer ? '/lecturer' : '/student';
+  const roleLabel = isLecturer ? 'Giảng viên' : user?.role === 'STUDENT' ? 'Sinh viên' : '';
+
   return (
     <header className="navbar">
       <div className="navbar-brand">
-        <Link href="/lecturer" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <Link href={roleUrl} style={{ textDecoration: 'none', color: 'inherit' }}>
           CppDSA{' '}
-          <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--neutral-600)' }}>
-            | Giảng viên
-          </span>
+          {roleLabel && (
+            <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--neutral-600)' }}>
+              | {roleLabel}
+            </span>
+          )}
         </Link>
       </div>
 
       <nav className="navbar-nav">
-        <Link href="/lecturer" className="btn btn-secondary btn-sm">
+        <Link href={roleUrl} className="btn btn-secondary btn-sm" data-testid="nav-classrooms-link">
           Danh sách lớp
         </Link>
 
-        <SystemWarmupButton />
+        {isLecturer && <SystemWarmupButton />}
 
         {user && (
           <div
             style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '0.5rem' }}
           >
-            <span style={{ fontSize: '0.85rem', color: 'var(--neutral-700)' }}>{user.email}</span>
+            <span
+              style={{ fontSize: '0.85rem', color: 'var(--neutral-700)' }}
+              data-testid="user-email-display"
+            >
+              {user.email}
+            </span>
             <button
               type="button"
               className="btn btn-secondary btn-sm"

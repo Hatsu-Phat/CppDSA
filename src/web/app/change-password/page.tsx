@@ -53,6 +53,9 @@ export default function ChangePasswordPage() {
         if (meData?.user?.role === 'LECTURER') {
           setTimeout(() => router.push('/lecturer'), 1200);
           return;
+        } else if (meData?.user?.role === 'STUDENT') {
+          setTimeout(() => router.push('/student'), 1200);
+          return;
         }
       }
 
