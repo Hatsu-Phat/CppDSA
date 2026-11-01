@@ -1,0 +1,35 @@
+{
+  "name": "cppdsa",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "src/shared",
+    "src/api",
+    "src/grader",
+    "src/web"
+  ],
+  "scripts": {
+    "build:shared": "npm run --workspace=src/shared build",
+    "build:api": "npm run --workspace=src/api build",
+    "build:grader": "npm run --workspace=src/grader build",
+    "build:web": "npm run --workspace=src/web build",
+    "build": "npm run build:shared && npm run build:api && npm run build:grader && npm run build:web",
+    "lint": "eslint .",
+    "lint:workspaces": "npm run --workspaces --if-present lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run --workspaces --if-present test",
+    "migrate:up": "npm run --workspace=src/api migrate:up",
+    "migrate:down": "npm run --workspace=src/api migrate:down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.14.0",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.14.0",
+    "globals": "^15.12.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.13.0",
+    "vitest": "^2.1.4"
+  }
+}

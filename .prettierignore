@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+coverage
+package-lock.json
+handoff
+docs
+reports
+spike
+tests/p1
+.claude
+*.md
+*.yml
+*.yaml
+.git

@@ -1,0 +1,28 @@
+{
+  "name": "@cppdsa/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint app tests",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cppdsa/shared": "*",
+    "next": "^14.2.18",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "happy-dom": "^15.7.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

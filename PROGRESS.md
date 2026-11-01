@@ -1,7 +1,7 @@
 # PROGRESS
 
 PHASE: DEV
-CURRENT_PHASE: P3
+CURRENT_PHASE: P4
 
 ## Quyết định
 - 2026-10-31: tạo project từ template ai-workflow.
@@ -23,3 +23,4 @@ CURRENT_PHASE: P3
 - 2026-11-01: người dùng duyệt P1 (gồm hợp đồng chấm hai mode). Bắt đầu P2. Chia 2 task: T-0003 spike sandbox local trong Docker không privileged (tiêu chí 1–4, 6, 8; 5 ở local); T-0004 (sau T-0003 PASS) thử trên Render free + bench (tiêu chí 5, 7) — cần người dùng cho phép deploy.
 - 2026-11-01: người dùng cấp quyền tự động 6 giờ (tự giao task, kiểm thử, sang phase khi không còn lỗi). T-0003 vòng 1 FAIL (probe độc lập: runner treo bởi setsid, crash bởi stderr flood, CE lộ secret do biên dịch bằng root, đọc được expected, ghi file ngoài). Giao vòng 2.
 - 2026-11-01: T-0003 PASS (vòng 3). P2 PASS phần local; tiêu chí 5, 7 (Render) → T-0004 chờ connector Render (phiên song song) + push. Theo ủy quyền tự động, bắt đầu P3 (T-0005). Quyết định kỹ thuật P3 (Fastify, Vitest, ESLint+Prettier, node-pg-migrate, postgres:16 [CẦN XÁC MINH major Azure]) ghi trong T-0005.
+- 2026-11-01: P3 PASS (T-0005). Ghi chú vận hành: chạy agy qua bash (scratchpad/run-agy.sh, cùng prompt/model run-task.ps1) vì PowerShell thoát sớm khi agy ghi stderr; npm luôn chạy trong bản sao repo trong container (symlink NTFS). Tiếp: T-0004 (Render spike) + P4.

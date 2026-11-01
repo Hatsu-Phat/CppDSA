@@ -135,3 +135,17 @@
 - Đánh giá test agy: vòng 1 không đủ (chỉ kiểm file mồi); vòng 2 đã gồm probe độc lập và hậu kiểm hiệu ứng thật; Claude thêm 3 probe chưa thấy đều SAFE → test đủ cho phạm vi local.
 - Kết luận: PASS phần local (1–4, 6 local, 8). Tiêu chí 5, 7 (Render) chuyển T-0004, chờ phiên có connector Render + push GitHub. Theo ủy quyền tự động của người dùng, chuyển sang P3 (không phụ thuộc kết quả Render); nếu T-0004 FAIL theo PROJECT_PLAN 3.3 thì dừng và báo người dùng.
 
+### T-0005 / Phase P3 — khung monorepo, compose, CI — 2026-11-01
+- Môi trường: Docker 29.8.1, `node:22-bookworm`, `postgres:16`; commit `cbfe933` (task/T-0005).
+- Sự cố chạy agy: `run-task.ps1` thoát sớm (PowerShell coi dòng stderr "root agent idle…" là lỗi) trong khi agy vẫn chạy; một lần agy bị hủy do `Get-ChildItem`; một lần mắc lỗi symlink `npm install` trên mount NTFS. Xử lý: Claude chạy agy trực tiếp từ bash, đổi lệnh kiểm chứng sang chép repo vào filesystem container.
+- Lệnh Claude chạy lại:
+  - Bản sao trong container: `npm ci` OK; `npm run lint` exit=0; `format:check` exit=0 ("All matched files use Prettier code style!"); `build` exit=0; `npm test` exit=0 — shared 6, api 2, grader 1, web 2 test PASS.
+  - `git clone` sạch nhánh task/T-0005 → chuỗi ci+lint+format+build+test: exit=0.
+  - `docker compose up -d --build` exit=0; 4 service running (db healthy); `GET :4000/health` 200 `{"status":"ok","db":"ok"}`; `:4100/health` 200; `:3000/` 200; `:3000/api/health` 200; port bind 127.0.0.1.
+  - Migration: bảng users/classrooms/assignments/pgmigrations sau up tự động; `migrate:down` → còn 1 bảng; `migrate:up` lại OK. Dừng db → api `/health` 503 `{"status":"error","db":"error"}`. `docker compose down -v` OK.
+  - CI YAML hợp lệ: on push/PR; checkout, setup-node 22 (cache npm), npm ci, lint, format:check, build, test.
+  - `.gitignore` phủ node_modules/.next/dist ở mọi cấp; không thấy secret cứng (chỉ mặc định postgres local).
+- Mutation: cài `return undefinedVar` → build api exit=2 (TS2552); đổi status health → test api exit=1. Biến không dùng chỉ là warning của ESLint → lint exit 0 (điểm nhỏ: nên `--max-warnings=0`).
+- Tiêu chí P3: (1) một lệnh khởi động toàn bộ ✔; (2) health 200 ✔; (3) build+lint+test pass từ clone sạch, mỗi phần ≥ 1 test ✔; làm lại theo DEV_SETUP ✔. CI trên GitHub: kiểm sau khi push.
+- Kết luận: PASS.
+

@@ -1,0 +1,27 @@
+{
+  "name": "@cppdsa/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src tests",
+    "test": "vitest run",
+    "migrate:up": "node-pg-migrate -m migrations up",
+    "migrate:down": "node-pg-migrate -m migrations down 1"
+  },
+  "dependencies": {
+    "@cppdsa/shared": "*",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1",
+    "node-pg-migrate": "^7.7.1",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
