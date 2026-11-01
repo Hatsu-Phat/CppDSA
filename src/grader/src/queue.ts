@@ -1,7 +1,8 @@
-import { JudgeJob, JudgeResult } from '@cppdsa/shared';
+import fs from 'node:fs';
+import { JudgeJob } from '@cppdsa/shared';
 import { UidPool } from './uid-pool.js';
 import { GraderConfig } from './config.js';
-import { executeJob } from './executor.js';
+import { executeJob, ExecuteJobResult } from './executor.js';
 
 interface QueuedItem {
   job: JudgeJob;
@@ -14,10 +15,19 @@ export class JobQueue {
   private activeMemoryMb = 0;
   private uidPool: UidPool;
   private config: GraderConfig;
+  private cgroupTimer: NodeJS.Timeout | null = null;
+  private recentMetrics = new Map<
+    string,
+    { queueMs: number; compileMs: number; runMs: number; totalMs: number }
+  >();
 
   constructor(config: GraderConfig, uidPool?: UidPool) {
     this.config = config;
     this.uidPool = uidPool || new UidPool(config.sandboxUidBase, config.sandboxUidCount);
+
+    if (this.config.enableCgroupLogging) {
+      this.startCgroupLogging();
+    }
   }
 
   public enqueue(job: JudgeJob): void {
@@ -65,7 +75,8 @@ export class JobQueue {
 
     // Execute job asynchronously
     (async () => {
-      let result: JudgeResult;
+      const startExecuteAt = Date.now();
+      let result: ExecuteJobResult;
       try {
         result = await executeJob(nextItem.job, this.uidPool, this.config);
       } catch (err: any) {
@@ -76,8 +87,38 @@ export class JobQueue {
           score: 0,
           tests: [],
           compileMessage: `System error: ${err.message || 'Unknown error'}`,
+          compileMs: 0,
+          runMs: 0,
         };
       }
+
+      // Structured JSON logging: decision 6
+      const queueMs = Math.max(0, Math.round(startExecuteAt - nextItem.enqueuedAt));
+      const compileMs = result.compileMs ?? 0;
+      const runMs = result.runMs ?? 0;
+      const totalMs = Math.round(Date.now() - nextItem.enqueuedAt);
+      const logEntry = {
+        level: 'info',
+        time: new Date().toISOString(),
+        service: 'grader',
+        jobId: nextItem.job.submissionId,
+        submissionId: nextItem.job.submissionId,
+        queuedAt: nextItem.enqueuedAt,
+        queueMs,
+        compileMs,
+        runMs,
+        totalMs,
+        verdict: result.verdict,
+        score: result.score,
+      };
+      console.log(JSON.stringify(logEntry));
+
+      this.recentMetrics.set(nextItem.job.submissionId, {
+        queueMs,
+        compileMs,
+        runMs,
+        totalMs,
+      });
 
       // Send callback
       await this.sendCallbackWithRetry(nextItem.job.callbackUrl, result);
@@ -88,9 +129,20 @@ export class JobQueue {
     })();
   }
 
+  public getJobMetrics(submissionId: string):
+    | {
+        queueMs: number;
+        compileMs: number;
+        runMs: number;
+        totalMs: number;
+      }
+    | undefined {
+    return this.recentMetrics.get(submissionId);
+  }
+
   private async sendCallbackWithRetry(
     callbackUrl: string,
-    result: JudgeResult,
+    result: ExecuteJobResult,
     maxRetries = 3
   ): Promise<void> {
     if (!callbackUrl) return;
@@ -118,6 +170,44 @@ export class JobQueue {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         delayMs *= 3;
       }
+    }
+  }
+
+  private startCgroupLogging(): void {
+    this.cgroupTimer = setInterval(() => {
+      try {
+        let cpuStat = '';
+        let memCurrent = '';
+        let memPeak = '';
+        if (fs.existsSync('/sys/fs/cgroup/cpu.stat')) {
+          cpuStat = fs.readFileSync('/sys/fs/cgroup/cpu.stat', 'utf-8').trim();
+        }
+        if (fs.existsSync('/sys/fs/cgroup/memory.current')) {
+          memCurrent = fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf-8').trim();
+        }
+        if (fs.existsSync('/sys/fs/cgroup/memory.peak')) {
+          memPeak = fs.readFileSync('/sys/fs/cgroup/memory.peak', 'utf-8').trim();
+        }
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            time: new Date().toISOString(),
+            service: 'grader-cgroup',
+            cpuStat,
+            memoryCurrentBytes: Number(memCurrent) || null,
+            memoryPeakBytes: Number(memPeak) || null,
+          })
+        );
+      } catch {
+        // Ignore
+      }
+    }, 10000);
+  }
+
+  public stop(): void {
+    if (this.cgroupTimer) {
+      clearInterval(this.cgroupTimer);
+      this.cgroupTimer = null;
     }
   }
 }

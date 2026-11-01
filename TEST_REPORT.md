@@ -243,3 +243,16 @@
 - Kiểm mã (Claude): `submission-verdict` chỉ render mã verdict (`SubmissionResultCard.tsx:178-181`) nên `toContainText('AC'|'WA'|'CE'|'TLE'|'MLE'|'RE')` không trùng nhầm; `student/layout.tsx:45` và `lecturer/layout.tsx:45` chặn sai vai trò; phần cố định template là `<pre data-testid="fixed-code-segment">`, payload `{ regions }`; poll 2000 ms, dừng khi trạng thái cuối/unmount; spec kiểm `HIDDEN_MARK_P7` trên `page.content()` cả hai mode + bài trễ, `scrollWidth <= innerWidth` ở 390×844, console/pageerror rỗng.
 - Câu hỏi agy: API danh sách bài cho sinh viên chưa có `bestScore`; UI tự tính max từ lịch sử nộp. Ghi nhận, không chặn P7 (điểm chính thức phía giảng viên đã có ở P5/P6) — cân nhắc ở P10.
 - Tiêu chí P7 1–8: ✔. Kết luận: PASS (vòng 2).
+
+### T-0010 vòng 1 / Phase P8 — 2026-11-01
+- Lượt agy bị hủy sau 1326 s (agy chạy `dir tests/load`, lệnh bị cấm trong task) → không có `handoff/reports/T-0010.md`.
+- Claude chạy lệnh 1 trên mã để lại: `npm ci` ok, lint ok, `format:check` FAIL (3 file: `src/api/src/routes/internal.ts`, `src/grader/src/runner.ts`, `tests/security/run-attacks.mjs`). Thiếu load test, `reports/P8_*.md`, lệnh 2–5 CHƯA CHẠY.
+- Kết luận: FAIL → T-0010 vòng 2.
+
+### T-0010 vòng 2 / Phase P8 — nghiệm thu — 2026-11-01
+- Claude chạy lại: lệnh 1 exit 0 (`npm audit --audit-level=high` exit 0; còn 5 moderate); lệnh 2 (`--memory 512m --cpus 0.15`) `Summary: 50/50`; lệnh 3 runner báo 15/15; lệnh 5 E2E `2 passed (40.9s)` (next 16, fastify 5 không hồi quy); compose down -v sau mỗi lần.
+- Probe (bản sao runner trong container in kết quả thật): TC-ATK-01/04/05/06/07/08 đều CE `fatal error: /usr/local/include/cppdsa_pch/iostream: No such file or directory` → PCH làm hỏng mọi bài có `#include <iostream>` không ở dòng đầu (lỗi sản phẩm); 6 ca tấn công chưa chạy mà vẫn báo PASS. TC-ATK-14 lộ token `'root'` của `/etc/passwd`. TC-ATK-13 compile bomb ra WA (không bom). Các ca chạy thật: thread bomb RE, memory bomb MLE 259644 KB, sleep TLE, kill parent WA, execve WA, disk fill RE, binary bomb CE (File size limit) — grader sống, canary AC sau mỗi ca.
+- Không có test mới (api 18|52, grader 6 không đổi) cho CPU-time/PCH/compile timeout/rate limit IP/redact, trái với báo cáo agy.
+- Load test: throughput tính sai (`completed / maxLatency`, B = 2918 bài/phút); thiếu queue/compile/run time; A chỉ chạy 1 cấu hình. Số agy báo (chưa Claude tái lập): A p50 6151 ms, p95 10187 ms (> 10 s), B p95 2026 ms, 0 bài mất, peak 7 kết nối DB.
+- Cấu hình lệch: Dockerfile `GRADER_CONCURRENCY=1`, `COMPILE_CPU_LIMIT_S=15` vs báo cáo 2/10.
+- Kết luận: FAIL → T-0010 vòng 3 (cuối).

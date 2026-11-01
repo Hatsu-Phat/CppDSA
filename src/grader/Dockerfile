@@ -9,6 +9,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libseccomp2 \
     && rm -rf /var/lib/apt/lists/*
 
+# Precompile <bits/stdc++.h> and <iostream> with exact flags (-std=c++17 -O2) in read-only directory
+# Provide symlinks to original headers so GCC can fall back to normal compilation if PCH is not usable
+RUN mkdir -p /usr/local/include/cppdsa_pch/bits \
+    && PCH_SRC=$(find /usr/include -name "stdc++.h" | head -n 1) \
+    && echo "Compiling PCH from $PCH_SRC..." \
+    && ln -s "$PCH_SRC" /usr/local/include/cppdsa_pch/bits/stdc++.h \
+    && g++ -std=c++17 -O2 -x c++-header /usr/local/include/cppdsa_pch/bits/stdc++.h -o /usr/local/include/cppdsa_pch/bits/stdc++.h.gch \
+    && PCH_IO=$(find /usr/include -name "iostream" | head -n 1) \
+    && echo "Compiling PCH from $PCH_IO..." \
+    && ln -s "$PCH_IO" /usr/local/include/cppdsa_pch/iostream \
+    && g++ -std=c++17 -O2 -x c++-header /usr/local/include/cppdsa_pch/iostream -o /usr/local/include/cppdsa_pch/iostream.gch \
+    && chmod -R 755 /usr/local/include/cppdsa_pch \
+    && chown -R root:root /usr/local/include/cppdsa_pch
+
 # Create pool of unprivileged sandbox users with no home directory (UID 2000000000 to 2000000015)
 RUN for uid in $(seq 2000000000 2000000015); do \
       groupadd -g $uid sandbox$uid && \
@@ -58,6 +72,10 @@ WORKDIR /app/src/grader
 ENV SANDBOX_UID_BASE=2000000000
 ENV SANDBOX_UID_COUNT=8
 ENV GRADER_MEMORY_BUDGET_MB=400
+ENV GRADER_CONCURRENCY=1
+ENV GRADER_WALL_FACTOR=10
+ENV COMPILE_TIMEOUT_MS=15000
+ENV COMPILE_CPU_LIMIT_S=10
 EXPOSE 4100
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "dist/index.js"]

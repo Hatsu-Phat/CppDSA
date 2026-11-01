@@ -41,6 +41,16 @@ export function buildGraderApp(
     });
   });
 
+  // Internal metrics endpoint for load test latency breakdown
+  app.get('/jobs/:submissionId/metrics', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { submissionId } = request.params as { submissionId: string };
+    const metrics = jobQueue.getJobMetrics(submissionId);
+    if (!metrics) {
+      return reply.code(404).send({ error: 'Metrics not found' });
+    }
+    return reply.code(200).send(metrics);
+  });
+
   // Submit job endpoint
   app.post('/jobs', async (request: FastifyRequest, reply: FastifyReply) => {
     // 1. Secret authentication

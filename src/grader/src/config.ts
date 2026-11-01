@@ -9,6 +9,10 @@ export interface GraderConfig {
   sandboxUidCount: number;
   launcherPath: string;
   compileTimeoutMs: number;
+  compileCpuLimitS: number;
+  graderWallFactor: number;
+  enablePch: boolean;
+  enableCgroupLogging: boolean;
   maxOutputBytes: number;
 }
 
@@ -16,14 +20,18 @@ export function loadConfig(): GraderConfig {
   const port = Number(process.env.PORT || process.env.GRADER_PORT || 4100);
   const host = process.env.HOST || process.env.GRADER_HOST || '0.0.0.0';
   const graderSecret = process.env.GRADER_SECRET || '';
-  const concurrency = Math.max(1, Number(process.env.GRADER_CONCURRENCY || 2));
+  const concurrency = Math.max(1, Number(process.env.GRADER_CONCURRENCY || 1));
   const memoryBudgetMb = Math.max(1, Number(process.env.GRADER_MEMORY_BUDGET_MB || 400));
   const sandboxUidBase = Number(
     process.env.SANDBOX_UID_BASE || process.env.SANDBOX_UID_START || 2000000000
   );
   const sandboxUidCount = Number(process.env.SANDBOX_UID_COUNT || 8);
   const launcherPath = process.env.LAUNCHER_PATH || '/usr/local/bin/launcher';
-  const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT_MS || 10000);
+  const compileTimeoutMs = Number(process.env.COMPILE_TIMEOUT_MS || 15000);
+  const compileCpuLimitS = Math.max(1, Number(process.env.COMPILE_CPU_LIMIT_S || 10));
+  const graderWallFactor = Math.max(1, Number(process.env.GRADER_WALL_FACTOR || 10));
+  const enablePch = process.env.ENABLE_PCH !== 'false';
+  const enableCgroupLogging = process.env.ENABLE_CGROUP_LOGGING === 'true';
   const maxOutputBytes = Number(process.env.MAX_OUTPUT_BYTES || 256 * 1024); // 256 KB
 
   return {
@@ -37,6 +45,10 @@ export function loadConfig(): GraderConfig {
     sandboxUidCount,
     launcherPath,
     compileTimeoutMs,
+    compileCpuLimitS,
+    graderWallFactor,
+    enablePch,
+    enableCgroupLogging,
     maxOutputBytes,
   };
 }

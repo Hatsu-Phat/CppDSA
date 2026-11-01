@@ -1,0 +1,22 @@
+services:
+  grader:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.15'
+          memory: 512M
+    cpus: 0.15
+    mem_limit: 512m
+    environment:
+      ENABLE_CGROUP_LOGGING: 'true'
+
+  api:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    mem_limit: 512m
+    environment:
+      ENABLE_CGROUP_LOGGING: 'true'
+      LOGIN_RATE_LIMIT_MAX: '200'
+      GLOBAL_RATE_LIMIT_MAX: '1000'

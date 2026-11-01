@@ -27,6 +27,7 @@ export const submissionRoutes: FastifyPluginAsync<SubmissionRouteOptions> = asyn
         rateLimit: {
           max: 6,
           timeWindow: 60 * 1000,
+          hook: 'preHandler',
           keyGenerator: (req) => req.user?.id || req.ip,
           errorResponseBuilder: () => ({
             statusCode: 429,

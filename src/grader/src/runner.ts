@@ -10,6 +10,7 @@ export interface RunTestOptions {
   timeLimitMs: number;
   memoryLimitMb: number;
   maxOutputBytes?: number;
+  graderWallFactor?: number;
 }
 
 export interface RunTestResult {
@@ -29,6 +30,8 @@ export async function runTest(
   const maxOutputBytes = options.maxOutputBytes || 256 * 1024;
   const memoryLimitBytes = memoryLimitMb * 1024 * 1024;
   const tlSec = Math.ceil(timeLimitMs / 1000);
+  const wallFactor = options.graderWallFactor || 10;
+  const wallDeadlineMs = timeLimitMs * wallFactor + 1000;
 
   const useLauncher = fs.existsSync(launcherPath);
   let cmd: string;
@@ -79,7 +82,7 @@ export async function runTest(
   let killFallbackTimer: NodeJS.Timeout | null = null;
   let oleFallbackTimer: NodeJS.Timeout | null = null;
 
-  // Soft timeout timer: signals child
+  // Soft timeout timer: fires at wallDeadlineMs (TL * GRADER_WALL_FACTOR + 1000)
   const timer = setTimeout(() => {
     timedOut = true;
     try {
@@ -94,7 +97,7 @@ export async function runTest(
         // Ignore
       }
     }, 100);
-  }, timeLimitMs + 50);
+  }, wallDeadlineMs);
 
   // Send input to stdin
   child.stdin?.on('error', () => {});
@@ -163,7 +166,7 @@ export async function runTest(
         const wallTime = Math.round(performance.now() - runStart);
         resolve({ code: -1, signal: 'SIGKILL', wallTimeMs: wallTime });
       }
-    }, timeLimitMs + 400);
+    }, wallDeadlineMs + 500);
 
     child.on('close', (code, signal) => {
       if (!settled) {
@@ -184,22 +187,27 @@ export async function runTest(
 
   // Read rusage.json if written by launcher
   let memoryKb = 0;
+  let cpuTimeMs = 0;
+  let rusageLoaded = false;
   const rusagePath = path.join(runDir, 'rusage.json');
   if (fs.existsSync(rusagePath)) {
     try {
       const rusage = JSON.parse(fs.readFileSync(rusagePath, 'utf-8'));
       memoryKb = rusage.maxrss_kb || 0;
+      cpuTimeMs = (rusage.user_time_ms || 0) + (rusage.sys_time_ms || 0);
+      rusageLoaded = true;
     } catch {
       // Ignore
     }
   }
 
-  // Determine Verdict
+  // Determine Verdict:
+  // Decision 1: verdict TLE when CPU time (user+sys) > TL or hard wall deadline exceeded (sleep) or SIGXCPU
   let verdict: JudgeVerdict = 'RE';
 
   if (oleTriggered || execRes.signal === 'SIGXFSZ') {
     verdict = 'RE'; // Or OLE mapped to RE
-  } else if (timedOut || execRes.signal === 'SIGXCPU' || wallTimeMs > timeLimitMs + 50) {
+  } else if (timedOut || execRes.signal === 'SIGXCPU' || cpuTimeMs > timeLimitMs) {
     verdict = 'TLE';
   } else if (
     stderrRaw.includes('bad_alloc') ||
@@ -221,9 +229,12 @@ export async function runTest(
     }
   }
 
+  // timeMs returned is CPU time when rusage is available, otherwise wallTimeMs
+  const returnedTimeMs = useLauncher && rusageLoaded ? cpuTimeMs : wallTimeMs;
+
   return {
     verdict,
-    timeMs: wallTimeMs,
+    timeMs: returnedTimeMs,
     memoryKb,
   };
 }

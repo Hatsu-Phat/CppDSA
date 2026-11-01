@@ -38,3 +38,9 @@ CURRENT_PHASE: P8
 - 2026-11-01: T-0004 vòng 3 (cuối): local 0 FAIL kể cả --cpus 0.15; Render: biên dịch bits/stdc++ 15.7 s, bench độ lệch 3.35%, run-suite không hoàn tất trong 5 phút. Dừng T-0004 (hết 3 vòng), báo người dùng: Render free khó đạt p95 ≤ 10 s; xử lý ở P8 hoặc đổi nơi chạy grader.
 - 2026-11-01: P6 PASS (T-0008 vòng 1; lượt agy bị ngắt do thiếu RAM, không có báo cáo bàn giao — Claude tự chạy lệnh 1, 2 và probe, đều đạt). Merge `task/T-0008` → main. Tiếp: P7 (T-0009).
 - 2026-11-01: P7 PASS (T-0009 vòng 2; vòng 1 FAIL: E2E chạm rate limit 6 lần/phút do dùng 1 sinh viên, lượt agy bị ngắt không có báo cáo). Merge `task/T-0009` → main. Tiếp: P8 (T-0010).
+
+## Điểm dừng 2026-11-01 (P8 dở dang)
+- Nhánh `task/T-0010`; `main` local đã gồm P0–P7 (P7 PASS, merge fe779ee). Vẫn CHƯA push `main` (token thiếu scope `workflow`).
+- T-0010 (P8): vòng 1 bị hủy (agy chạy `dir`); vòng 2 FAIL (PCH làm CE mọi `#include <iostream>` không ở dòng đầu, 6 ca tấn công không chạy thật, lộ token `/etc/passwd`, không có test mới, throughput tính sai, cấu hình lệch — chi tiết TEST_REPORT). Vòng 3: lượt 1 bị hủy sau 278 s (lệnh nhiều dòng ngoài allow-list); lượt 2 bị Claude Code dừng vì máy thiếu RAM — CHƯA có kết quả vòng 3. Mã vòng 1–3 nằm chưa commit trong working tree; `handoff/reports/T-0010.md` vẫn là báo cáo vòng 2.
+- Việc tiếp: khi người dùng cho phép, chạy lại `bash handoff/run-agy.sh T-0010 240m` (phản hồi vòng 3 đã ghi trong task) → nghiệm thu. Dừng trước P9.
+- 2026-11-01 (sau): người dùng cho chạy lại vòng 3 → lượt bị Claude Code dừng lần nữa vì thiếu RAM (vmmemWSL chiếm phần lớn bộ nhớ; còn ~0.4–0.9 GB trống). Agy đã xong lệnh 1–2 (grading 58/58 theo báo cáo agy, Claude CHƯA kiểm), đang ở lệnh 3–5. Compose đã down -v. Chờ người dùng xử lý RAM rồi chạy lại.
