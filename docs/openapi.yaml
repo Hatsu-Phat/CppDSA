@@ -426,6 +426,85 @@ paths:
         '403':
           description: Forbidden
 
+  /assignments/{id}/statement:
+    put:
+      summary: Upload PDF problem statement (Lecturer owner only)
+      operationId: uploadAssignmentStatement
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-File-Name
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Statement PDF uploaded successfully
+        '400':
+          description: Invalid PDF or format error
+        '403':
+          description: Forbidden
+        '404':
+          description: Assignment not found
+        '413':
+          description: Payload too large
+        '503':
+          description: Storage service unconfigured or unavailable
+    get:
+      summary: Download PDF problem statement stream (Lecturer owner or Enrolled student)
+      operationId: getAssignmentStatement
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: PDF statement stream
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Forbidden
+        '404':
+          description: Statement not found
+    delete:
+      summary: Delete PDF problem statement (Lecturer owner only)
+      operationId: deleteAssignmentStatement
+      tags: [Assignments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Statement PDF deleted
+        '403':
+          description: Forbidden
+        '404':
+          description: Assignment not found
+
   /assignments/{id}/regrade:
     post:
       summary: Regrade all submissions for assignment (Lecturer owner only)

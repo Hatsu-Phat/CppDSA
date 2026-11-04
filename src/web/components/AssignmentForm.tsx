@@ -1,16 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 export interface AssignmentFormData {
   title: string;
-  description: string;
+  description?: string;
   mode: 'TEMPLATE' | 'FREE';
   timeLimitMs: number;
   memoryLimitMb: number;
   deadline: string;
   templateCode?: string;
   entryPointSpec?: any;
+  statement?: { name: string; size: number } | null;
+  statementFile?: File | null;
+  removeStatement?: boolean;
 }
 
 export interface AssignmentFormProps {
@@ -80,6 +83,12 @@ export function validateClientTemplate(code: string): { valid: boolean; error?: 
   return { valid: true };
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 export default function AssignmentForm({
   initialData,
   classroomId,
@@ -103,8 +112,41 @@ export default function AssignmentForm({
       : '2026-12-31T23:59'
   );
   const [templateCode, setTemplateCode] = useState(initialData?.templateCode || '');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [currentStatement] = useState<{ name: string; size: number } | null>(
+    initialData?.statement || null
+  );
+  const [removeStatement, setRemoveStatement] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const handleFileChange = (file: File | null) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setFormError('Chỉ chấp nhận file định dạng PDF (.pdf)');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setFormError('Dung lượng file PDF vượt quá giới hạn 10 MB');
+      return;
+    }
+    setFormError(null);
+    setPdfFile(file);
+    setRemoveStatement(false);
+  };
+
+  const handleRemoveFile = () => {
+    setPdfFile(null);
+    if (currentStatement) {
+      setRemoveStatement(true);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,12 +185,14 @@ export default function AssignmentForm({
 
     const payload: AssignmentFormData = {
       title: title.trim(),
-      description: description.trim(),
+      description: description.trim() || undefined,
       mode,
       timeLimitMs: tl,
       memoryLimitMb: ml,
       deadline: new Date(deadline).toISOString(),
       templateCode: mode === 'TEMPLATE' ? templateCode : undefined,
+      statementFile: pdfFile,
+      removeStatement,
     };
 
     setSubmitting(true);
@@ -168,7 +212,15 @@ export default function AssignmentForm({
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          title: payload.title,
+          description: payload.description,
+          mode: payload.mode,
+          timeLimitMs: payload.timeLimitMs,
+          memoryLimitMb: payload.memoryLimitMb,
+          deadline: payload.deadline,
+          templateCode: payload.templateCode,
+        }),
       });
 
       const data = await res.json().catch(() => null);
@@ -177,6 +229,35 @@ export default function AssignmentForm({
         setFormError(data?.message || data?.error || 'Có lỗi xảy ra khi lưu bài tập');
         setSubmitting(false);
         return;
+      }
+
+      const targetAssignmentId = assignmentId || data?.assignment?.id;
+
+      // Handle PDF upload or delete
+      if (targetAssignmentId) {
+        if (pdfFile) {
+          const uploadRes = await fetch(`/api/assignments/${targetAssignmentId}/statement`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/pdf',
+              'X-File-Name': encodeURIComponent(pdfFile.name),
+            },
+            body: pdfFile,
+          });
+
+          if (!uploadRes.ok) {
+            const uploadErr = await uploadRes.json().catch(() => null);
+            setFormError(
+              uploadErr?.message || 'Bài tập đã được lưu nhưng không thể tải lên file đề bài PDF'
+            );
+            setSubmitting(false);
+            return;
+          }
+        } else if (removeStatement && assignmentId) {
+          await fetch(`/api/assignments/${assignmentId}/statement`, {
+            method: 'DELETE',
+          });
+        }
       }
 
       if (onSuccess) {
@@ -218,17 +299,123 @@ export default function AssignmentForm({
           />
         </div>
 
+        {/* Đề bài (PDF) Section */}
+        <div className="form-group" data-testid="statement-pdf-section">
+          <label className="form-label">Đề bài (PDF)</label>
+
+          {pdfFile ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem 1rem',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--border-radius)',
+                background: 'var(--bg-page)',
+              }}
+              data-testid="pdf-file-info"
+            >
+              <div>
+                <strong>{pdfFile.name}</strong>{' '}
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  ({formatFileSize(pdfFile.size)})
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleRemoveFile}
+                data-testid="remove-pdf-btn"
+              >
+                Xóa file
+              </button>
+            </div>
+          ) : currentStatement && !removeStatement ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem 1rem',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--border-radius)',
+                background: 'var(--bg-page)',
+              }}
+              data-testid="pdf-file-info"
+            >
+              <div>
+                <strong>{currentStatement.name}</strong>{' '}
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  ({formatFileSize(currentStatement.size)} · Đã lưu)
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleRemoveFile}
+                data-testid="remove-pdf-btn"
+              >
+                Xóa file PDF
+              </button>
+            </div>
+          ) : (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleFileChange(file);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                border: `2px dashed ${isDragging ? 'var(--primary)' : 'var(--border-color)'}`,
+                borderRadius: 'var(--border-radius)',
+                padding: '1.5rem',
+                textAlign: 'center',
+                background: isDragging ? 'rgba(25, 118, 210, 0.05)' : 'transparent',
+                cursor: 'pointer',
+              }}
+              data-testid="pdf-dropzone"
+            >
+              <input
+                ref={fileInputRef}
+                id="assignment-pdf-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileChange(file);
+                }}
+                data-testid="assignment-pdf-input"
+              />
+              <p style={{ margin: '0 0 0.25rem 0', fontWeight: 500, color: 'var(--text-main)' }}>
+                Kéo thả file PDF đề bài vào đây, hoặc bấm để chọn file
+              </p>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Chỉ chấp nhận file định dạng PDF, tối đa 10 MB
+              </span>
+            </div>
+          )}
+        </div>
+
         <div className="form-group">
           <label className="form-label" htmlFor="assignment-desc">
-            Mô tả đề bài & Ví dụ công khai
+            Ghi chú thêm (không bắt buộc)
           </label>
           <textarea
             id="assignment-desc"
             className="form-control"
-            rows={4}
+            rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Mô tả yêu cầu bài toán, ví dụ minh họa input/output..."
+            placeholder="Ghi chú bổ sung hoặc hướng dẫn thêm cho sinh viên..."
             data-testid="assignment-desc-input"
           />
         </div>

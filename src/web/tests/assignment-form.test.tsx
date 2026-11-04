@@ -144,4 +144,58 @@ describe('AssignmentForm Component', () => {
 
     vi.restoreAllMocks();
   });
+
+  it('renders statement PDF dropzone and handles valid PDF file selection and removal', () => {
+    render(<AssignmentForm classroomId="class-123" />);
+
+    expect(screen.getByTestId('statement-pdf-section')).toBeDefined();
+    expect(screen.getByTestId('pdf-dropzone')).toBeDefined();
+
+    const fileInput = screen.getByTestId('assignment-pdf-input');
+    const pdfFile = new File(['%PDF-1.4 sample content'], 'problem.pdf', {
+      type: 'application/pdf',
+    });
+
+    fireEvent.change(fileInput, { target: { files: [pdfFile] } });
+
+    const fileInfo = screen.getByTestId('pdf-file-info');
+    expect(fileInfo).toBeDefined();
+    expect(fileInfo.textContent).toContain('problem.pdf');
+
+    const removeBtn = screen.getByTestId('remove-pdf-btn');
+    fireEvent.click(removeBtn);
+
+    expect(screen.queryByTestId('pdf-file-info')).toBeNull();
+    expect(screen.getByTestId('pdf-dropzone')).toBeDefined();
+  });
+
+  it('displays existing statement if provided in initialData', () => {
+    render(
+      <AssignmentForm
+        classroomId="class-123"
+        initialData={{
+          statement: { name: 'existing_statement.pdf', size: 1048576 },
+        }}
+      />
+    );
+
+    const fileInfo = screen.getByTestId('pdf-file-info');
+    expect(fileInfo.textContent).toContain('existing_statement.pdf');
+    expect(fileInfo.textContent).toContain('1.00 MB');
+    expect(screen.getByTestId('remove-pdf-btn')).toBeDefined();
+  });
+
+  it('rejects non-PDF files with clear error message', () => {
+    render(<AssignmentForm classroomId="class-123" />);
+
+    const fileInput = screen.getByTestId('assignment-pdf-input');
+    const txtFile = new File(['text content'], 'problem.txt', {
+      type: 'text/plain',
+    });
+
+    fireEvent.change(fileInput, { target: { files: [txtFile] } });
+
+    const error = screen.getByTestId('assignment-form-error');
+    expect(error.textContent).toContain('Chỉ chấp nhận file định dạng PDF');
+  });
 });

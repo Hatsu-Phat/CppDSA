@@ -35,7 +35,7 @@ Tất cả các kiểm tra quyền được thực hiện nghiêm ngặt tại B
 |---|---|---|
 | **Lớp học (Classrooms)** | CRUD đầy đủ lớp do mình sở hữu (`lecturer_id = user.id`). Bị cấm 403 khi thao tác trên lớp của giảng viên khác. | Chỉ được xem (`GET`) thông tin các lớp mà mình đã được ghi danh (`classroom_enrollments`). Không được tạo/sửa/xóa. |
 | **Sinh viên trong lớp** | Import CSV, xem danh sách sinh viên, reset mật khẩu sinh viên trong lớp mình sở hữu. Phản hồi import CSV trả danh sách `createdStudents` kèm `temporaryPassword` cho tài khoản mới (không lưu plain text, không ghi log); tài khoản đã có ghi rõ `status: "existing"` không kèm mật khẩu. | Hoàn toàn không có quyền truy cập các endpoint quản lý sinh viên (403). |
-| **Bài tập (Assignments)** | CRUD bài tập trong lớp mình sở hữu; thiết lập mode (TEMPLATE/FREE), TL, ML, deadline. Chấm lại toàn bộ bài nộp (`POST /api/assignments/:id/regrade`). | Xem danh sách và nội dung bài tập của lớp mình ghi danh; xem template/mô tả giao diện, ví dụ công khai, trạng thái nộp và hạn nộp. |
+| **Bài tập (Assignments)** | CRUD bài tập trong lớp mình sở hữu; thiết lập mode (TEMPLATE/FREE), TL, ML, deadline. Tải lên (`PUT /api/assignments/:id/statement`), xóa (`DELETE /api/assignments/:id/statement`) file đề bài PDF. Chấm lại toàn bộ bài nộp (`POST /api/assignments/:id/regrade`). | Xem danh sách và nội dung bài tập của lớp mình ghi danh; xem template/mô tả giao diện, ví dụ công khai, xem đề bài PDF qua stream API (`GET /api/assignments/:id/statement`), trạng thái nộp và hạn nộp. |
 | **Bộ kiểm thử (Test Cases)** | Thêm đơn, thêm hàng loạt (`POST /api/assignments/:id/tests/bulk`), sửa, xóa, xem danh sách toàn bộ test case (kể cả hidden test) của bài tập thuộc lớp mình. | **Tuyệt đối không được xem** test ẩn dưới bất kỳ hình thức nào (không có endpoint, không trả về trong đề hay submission). |
 | **Nộp bài (Submissions)** | Xem danh sách bài nộp của cả lớp, lọc theo bài/thời gian/trạng thái/điểm; xem mã nguồn sinh viên, log biên dịch, excerpt test. Sửa điểm trực tiếp (`PATCH /api/submissions/:id/score`) và chấm lại từng bài (`POST /api/submissions/:id/regrade`). | Nộp bài cho bài tập lớp mình ghi danh (mode FREE nộp mã hoàn chỉnh có `main()`, mode TEMPLATE nộp regions); xem lịch sử bài nộp của chính mình; xem verdict, thời gian, bộ nhớ, điểm tổng. Không xem bài/điểm của bạn khác. |
 | **Bảng điểm (Grades)** | Xuất bảng điểm CSV tổng hợp của lớp mình (tính điểm cao nhất trước deadline). | Không có quyền xuất hoặc xem bảng điểm lớp (403). |
@@ -53,6 +53,7 @@ Các giới hạn được thiết lập mặc định và cấu hình linh ho�
 | Mã nguồn sinh viên nộp | ≤ 64 KB (65,536 bytes) | 413 `PAYLOAD_TOO_LARGE` |
 | Mã khung Template / Harness | ≤ 64 KB (65,536 bytes) | 413 `PAYLOAD_TOO_LARGE` |
 | Dữ liệu Input / Expected test | ≤ 1 MB (1,048,576 bytes) | 413 `PAYLOAD_TOO_LARGE` |
+| File đề bài PDF | ≤ 10 MB (10,485,760 bytes) | 413 `PAYLOAD_TOO_LARGE` |
 | Số lượng hidden test / bài | ≤ 50 test cases | 400 `TOO_MANY_TEST_CASES` |
 | Số dòng file CSV import sinh viên | ≤ 500 dòng dữ liệu | 400 `CSV_TOO_MANY_ROWS` |
 
@@ -120,4 +121,24 @@ Các giới hạn được thiết lập mặc định và cấu hình linh ho�
   - `replace=true`: Xóa toàn bộ test cũ của bài tập trong cùng transaction rồi thêm mới (đánh số `order_index` từ 1).
   - `replace=false` (mặc định): Tự động đánh số `order_index` tiếp nối (`max_order + 1, +2, ...`).
   - Kiểm tra dung lượng từng test (`≤ 1 MB`) và tổng số test sau khi thêm `≤ 50`. Vượt quá sẽ trả lỗi 400 all-or-nothing mà không ghi đè dữ liệu.
+
+---
+
+## 9. Đề bài PDF và Cơ chế Lưu trữ (PDF Statement Storage)
+
+- **Nguyên lý:** Giảng viên tải file PDF đề bài lên hệ thống khi tạo hoặc chỉnh sửa bài tập. File được lưu trữ trên Google Drive của tài khoản quản trị hệ thống (hoặc thư mục local ở môi trường phát triển/kiểm thử). Sinh viên xem đề bài PDF trực tiếp trên trang làm bài thông qua API stream bảo mật mà không lộ liên kết hay file ID công khai.
+- **Tải lên đề bài (`PUT /api/assignments/:id/statement`):**
+  - Giảng viên sở hữu lớp của bài tập.
+  - Body thô với `Content-Type: application/pdf`, dung lượng tối đa 10 MB (`MAX_STATEMENT_PDF_BYTES`).
+  - Tiêu đề file truyền qua header `X-File-Name` (URL-encoded, tối đa 255 ký tự).
+  - Kiểm tra 5 byte đầu tiên bắt buộc phải là `%PDF-` (sai trả về 400 `BAD_REQUEST`).
+  - Khi thay thế file mới: File cũ trên storage sẽ được tự động xóa sau khi file mới lưu thành công.
+- **Xem / Tải đề bài (`GET /api/assignments/:id/statement`):**
+  - Giảng viên sở hữu lớp hoặc sinh viên đã ghi danh vào lớp. Người ngoài trả về 403 / 404.
+  - Trả về stream nhị phân `Content-Type: application/pdf`, `Content-Disposition: inline; filename*=UTF-8''...`, `Cache-Control: private, max-age=300`.
+- **Xóa đề bài (`DELETE /api/assignments/:id/statement`):**
+  - Giảng viên sở hữu lớp. Xóa file khỏi storage driver và đặt lại các trường metadata về `NULL`.
+- **Thông tin đề bài trong chi tiết bài tập (`GET /api/assignments/:id`):**
+  - Trả thêm trường `statement: { name: string, size: number } | null` (không lộ file ID hay storage type).
+
 

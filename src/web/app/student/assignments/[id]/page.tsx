@@ -27,6 +27,7 @@ interface AssignmentDetails {
   template_code?: string;
   entry_point_spec?: any;
   sampleTests?: SampleTest[];
+  statement?: { name: string; size: number } | null;
 }
 
 export default function StudentAssignmentPage() {
@@ -334,23 +335,95 @@ export default function StudentAssignmentPage() {
       {/* Tab 1: Work */}
       {activeTab === 'work' && (
         <div>
-          {/* Problem description & public samples */}
-          {assignment.description && (
+          {/* Statement: PDF Viewer or Text Description */}
+          {assignment.statement ? (
             <div
               className="card"
-              style={{
-                marginBottom: '1.25rem',
-                whiteSpace: 'pre-wrap',
-                fontSize: '0.95rem',
-                lineHeight: 1.6,
-              }}
-              data-testid="assignment-description"
+              style={{ marginBottom: '1.25rem' }}
+              data-testid="assignment-statement-section"
             >
-              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-main)', fontSize: '1rem' }}>
-                Mô tả yêu cầu
-              </h4>
-              {assignment.description}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '0.75rem',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
+                }}
+              >
+                <h4 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1rem' }}>
+                  Đề bài (PDF): {assignment.statement.name}
+                </h4>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <a
+                    href={`/api/assignments/${assignment.id}/statement`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary btn-sm"
+                    data-testid="open-pdf-tab-btn"
+                  >
+                    Mở tab mới
+                  </a>
+                  <a
+                    href={`/api/assignments/${assignment.id}/statement`}
+                    download={assignment.statement.name}
+                    className="btn btn-secondary btn-sm"
+                    data-testid="download-pdf-btn"
+                  >
+                    Tải về
+                  </a>
+                </div>
+              </div>
+              <div
+                style={{
+                  width: '100%',
+                  height: '75vh',
+                  minHeight: '70vh',
+                  borderRadius: 'var(--border-radius)',
+                  overflow: 'hidden',
+                }}
+              >
+                <iframe
+                  src={`/api/assignments/${assignment.id}/statement`}
+                  title={`Đề bài - ${assignment.title}`}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  data-testid="pdf-statement-frame"
+                />
+              </div>
+              {assignment.description && (
+                <div
+                  style={{
+                    marginTop: '1rem',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px solid var(--border-color)',
+                    fontSize: '0.9rem',
+                    color: 'var(--text-muted)',
+                  }}
+                  data-testid="assignment-notes"
+                >
+                  <strong>Ghi chú thêm:</strong> {assignment.description}
+                </div>
+              )}
             </div>
+          ) : (
+            assignment.description && (
+              <div
+                className="card"
+                style={{
+                  marginBottom: '1.25rem',
+                  whiteSpace: 'pre-wrap',
+                  fontSize: '0.95rem',
+                  lineHeight: 1.6,
+                }}
+                data-testid="assignment-description"
+              >
+                <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-main)', fontSize: '1rem' }}>
+                  Mô tả yêu cầu
+                </h4>
+                {assignment.description}
+              </div>
+            )
           )}
 
           {/* Public Samples */}

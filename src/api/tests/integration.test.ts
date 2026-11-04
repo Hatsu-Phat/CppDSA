@@ -125,9 +125,18 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
         deadline timestamptz,
         template_code text,
         entry_point_spec jsonb,
+        statement_storage varchar(16),
+        statement_file_id text,
+        statement_file_name varchar(255),
+        statement_file_size integer,
         created_at timestamptz NOT NULL DEFAULT current_timestamp,
         updated_at timestamptz NOT NULL DEFAULT current_timestamp
       );
+
+      ALTER TABLE assignments ADD COLUMN IF NOT EXISTS statement_storage varchar(16);
+      ALTER TABLE assignments ADD COLUMN IF NOT EXISTS statement_file_id text;
+      ALTER TABLE assignments ADD COLUMN IF NOT EXISTS statement_file_name varchar(255);
+      ALTER TABLE assignments ADD COLUMN IF NOT EXISTS statement_file_size integer;
 
       CREATE TABLE IF NOT EXISTS test_cases (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -703,6 +712,249 @@ describeIntegration('Integration Tests with PostgreSQL & Mock Grader', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().assignment.description).toBe('Updated assignment description');
+  });
+
+  // ==========================================
+  // STATEMENT PDF TESTS (T-0014)
+  // ==========================================
+  const validPdfBytes = Buffer.from(
+    '%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF'
+  );
+  const replacementPdfBytes = Buffer.from(
+    '%PDF-1.4\n2 0 obj\n<<\n/Title (Replacement PDF)\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF'
+  );
+
+  it('[TEST_ASSIGNMENT_STATEMENT_UPLOAD] uploads PDF, validates format, bounds, roles, and replaces old file', async () => {
+    // 1. Valid PDF upload by Lecturer A
+    const resOk = await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerA.cookie,
+        'content-type': 'application/pdf',
+        'x-file-name': encodeURIComponent('Đề bài 1.pdf'),
+      },
+      payload: validPdfBytes,
+    });
+    expect(resOk.statusCode).toBe(200);
+    const bodyOk = resOk.json();
+    expect(bodyOk.statement.name).toBe('Đề bài 1.pdf');
+    expect(bodyOk.statement.size).toBe(validPdfBytes.length);
+
+    // Verify GET /api/assignments/:id returns statement without leaking internal storage or file id
+    const resGetAssign = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignmentTemplateId}`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(resGetAssign.statusCode).toBe(200);
+    const assignObj = resGetAssign.json().assignment;
+    expect(assignObj.statement).toEqual({
+      name: 'Đề bài 1.pdf',
+      size: validPdfBytes.length,
+    });
+    expect(assignObj.statement_file_id).toBeUndefined();
+    expect(assignObj.statement_storage).toBeUndefined();
+
+    // Check DB has file id
+    const dbRow = await pool.query(
+      'SELECT statement_storage, statement_file_id, statement_file_name, statement_file_size FROM assignments WHERE id = $1',
+      [assignmentTemplateId]
+    );
+    expect(dbRow.rows[0].statement_storage).toBe('local');
+    const firstFileId = dbRow.rows[0].statement_file_id;
+    expect(firstFileId).toBeTruthy();
+
+    // 2. Reject non-PDF file (<5 bytes or missing %PDF-)
+    const resBad = await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerA.cookie,
+        'content-type': 'application/pdf',
+      },
+      payload: Buffer.from('NOT_A_PDF_STREAM'),
+    });
+    expect(resBad.statusCode).toBe(400);
+
+    // 3. Reject file > 10 MB
+    const hugePdf = Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(10 * 1024 * 1024 + 10, 'A')]);
+    const resHuge = await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerA.cookie,
+        'content-type': 'application/pdf',
+      },
+      payload: hugePdf,
+    });
+    expect([400, 413]).toContain(resHuge.statusCode);
+
+    // 4. Reject Lecturer B (different classroom) -> 403
+    const resLecB = await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerB.cookie,
+        'content-type': 'application/pdf',
+      },
+      payload: validPdfBytes,
+    });
+    expect(resLecB.statusCode).toBe(403);
+
+    // 5. Reject Student 1 -> 403
+    const resStu = await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: student1.cookie,
+        'content-type': 'application/pdf',
+      },
+      payload: validPdfBytes,
+    });
+    expect(resStu.statusCode).toBe(403);
+
+    // 6. Replacing file deletes old file on storage
+    const resReplace = await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerA.cookie,
+        'content-type': 'application/pdf',
+        'x-file-name': 'de_bai_v2.pdf',
+      },
+      payload: replacementPdfBytes,
+    });
+    expect(resReplace.statusCode).toBe(200);
+
+    const dbRow2 = await pool.query('SELECT statement_file_id FROM assignments WHERE id = $1', [
+      assignmentTemplateId,
+    ]);
+    const secondFileId = dbRow2.rows[0].statement_file_id;
+    expect(secondFileId).not.toBe(firstFileId);
+  });
+
+  it('[TEST_ASSIGNMENT_STATEMENT_GET] streams PDF with exact headers and bytes to owner and enrolled student, denies outsiders', async () => {
+    // 1. Lecturer A (owner) GET statement
+    const resLec = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(resLec.statusCode).toBe(200);
+    expect(resLec.headers['content-type']).toContain('application/pdf');
+    expect(resLec.headers['content-disposition']).toContain('inline;');
+    expect(resLec.headers['cache-control']).toBe('private, max-age=300');
+    expect(resLec.rawPayload.equals(replacementPdfBytes)).toBe(true);
+
+    // 2. Student 1 (enrolled in classroom A) GET statement
+    const resStu1 = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: student1.cookie },
+    });
+    expect(resStu1.statusCode).toBe(200);
+    expect(resStu1.rawPayload.equals(replacementPdfBytes)).toBe(true);
+
+    // 3. Lecturer B (different classroom) -> 403
+    const resLecB = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: lecturerB.cookie },
+    });
+    expect(resLecB.statusCode).toBe(403);
+
+    // 4. Assignment without statement -> 404
+    const resNone = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignmentFreeId}/statement`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(resNone.statusCode).toBe(404);
+  });
+
+  it('[TEST_ASSIGNMENT_STATEMENT_DELETE] deletes statement, resets DB columns to NULL, and removes file', async () => {
+    // 1. Student cannot delete -> 403
+    const resStuDel = await app.inject({
+      method: 'DELETE',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: student1.cookie },
+    });
+    expect(resStuDel.statusCode).toBe(403);
+
+    // 2. Lecturer B cannot delete -> 403
+    const resLecBDel = await app.inject({
+      method: 'DELETE',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: lecturerB.cookie },
+    });
+    expect(resLecBDel.statusCode).toBe(403);
+
+    // 3. Lecturer A deletes statement -> 200
+    const resDel = await app.inject({
+      method: 'DELETE',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(resDel.statusCode).toBe(200);
+
+    // Verify DB columns are NULL
+    const dbRow = await pool.query(
+      'SELECT statement_file_id, statement_storage, statement_file_name, statement_file_size FROM assignments WHERE id = $1',
+      [assignmentTemplateId]
+    );
+    expect(dbRow.rows[0].statement_file_id).toBeNull();
+    expect(dbRow.rows[0].statement_storage).toBeNull();
+    expect(dbRow.rows[0].statement_file_name).toBeNull();
+    expect(dbRow.rows[0].statement_file_size).toBeNull();
+
+    // GET statement now returns 404
+    const resAfter = await app.inject({
+      method: 'GET',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: { cookie: lecturerA.cookie },
+    });
+    expect(resAfter.statusCode).toBe(404);
+
+    // Re-upload a statement for subsequent tests
+    await app.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerA.cookie,
+        'content-type': 'application/pdf',
+        'x-file-name': 'problem.pdf',
+      },
+      payload: validPdfBytes,
+    });
+  });
+
+  it('returns 503 "Chưa cấu hình lưu trữ đề bài PDF" when production lacks gdrive vars', async () => {
+    const prodApp = buildApp({
+      pool,
+      config: {
+        statementStorage: 'gdrive',
+        gdriveClientId: '',
+        nodeEnv: 'production',
+        graderSecret: 'prod-secret',
+        cookieSecret: 'prod-cookie-secret-32-chars-long!',
+        databaseUrl: 'postgres://user:pass@remote-azure-pg.postgres.database.azure.com:5432/db',
+      },
+    });
+
+    const res503 = await prodApp.inject({
+      method: 'PUT',
+      url: `/api/assignments/${assignmentTemplateId}/statement`,
+      headers: {
+        cookie: lecturerA.cookie,
+        'content-type': 'application/pdf',
+      },
+      payload: validPdfBytes,
+    });
+
+    expect(res503.statusCode).toBe(503);
+    expect(res503.json().message).toContain('Chưa cấu hình lưu trữ đề bài PDF');
+    await prodApp.close();
   });
 
   // TEST CASES CRUD
