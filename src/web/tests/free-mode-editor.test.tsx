@@ -41,4 +41,47 @@ describe('FreeModeEditor Component', () => {
     fireEvent.keyDown(textarea, { key: 'Tab' });
     expect(textarea.value.startsWith('    ')).toBe(true);
   });
+
+  it('renders default template with bits/stdc++.h when initialSource is omitted', () => {
+    const handleSubmit = vi.fn();
+    render(<FreeModeEditor onSubmit={handleSubmit} />);
+
+    const textarea = screen.getByTestId('free-source-input') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('#include <bits/stdc++.h>');
+    expect(textarea.value).toContain('using namespace std;');
+    expect(textarea.value).toContain('int main()');
+  });
+
+  it('rejects source code exceeding 64 KB limit', () => {
+    const handleSubmit = vi.fn();
+    const largeSource = 'a'.repeat(65537);
+    render(<FreeModeEditor initialSource={largeSource} onSubmit={handleSubmit} />);
+
+    const submitBtn = screen.getByTestId('submit-solution-btn');
+    fireEvent.click(submitBtn);
+
+    expect(handleSubmit).not.toHaveBeenCalled();
+    const errorAlert = screen.getByTestId('free-mode-editor-error');
+    expect(errorAlert.textContent).toContain('vượt quá dung lượng tối đa 64 KB');
+  });
+
+  it('disables submit button and shows loading text when submitting', () => {
+    const handleSubmit = vi.fn();
+    render(
+      <FreeModeEditor initialSource="int main() {}" onSubmit={handleSubmit} submitting={true} />
+    );
+
+    const submitBtn = screen.getByTestId('submit-solution-btn') as HTMLButtonElement;
+    expect(submitBtn.disabled).toBe(true);
+    expect(submitBtn.textContent).toContain('Đang gửi...');
+  });
+
+  it('updates source code when user types into textarea', () => {
+    const handleSubmit = vi.fn();
+    render(<FreeModeEditor initialSource="" onSubmit={handleSubmit} />);
+
+    const textarea = screen.getByTestId('free-source-input') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'int x = 42;' } });
+    expect(textarea.value).toBe('int x = 42;');
+  });
 });

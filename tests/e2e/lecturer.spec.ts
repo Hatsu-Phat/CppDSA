@@ -453,6 +453,42 @@ int main() {
     // Screenshot lecturer-submission.png
     await page.screenshot({ path: 'reports/ui/lecturer-submission.png' });
 
+    // Screenshot lecturer-dark.png (Lecturer submission in dark mode)
+    const themeBtnLec = page.getByTestId('theme-toggle-btn');
+    if (await themeBtnLec.isVisible()) {
+      await themeBtnLec.click();
+    } else {
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      });
+    }
+    await page.waitForFunction(
+      () => document.documentElement.getAttribute('data-theme') === 'dark'
+    );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: 'reports/ui/lecturer-dark.png' });
+
+    // Switch back to light
+    if (await themeBtnLec.isVisible()) {
+      await themeBtnLec.click();
+    } else {
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('data-theme', 'light');
+      });
+    }
+    await page.waitForFunction(
+      () => document.documentElement.getAttribute('data-theme') === 'light'
+    );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
+
     // 11.1. Test Score Editing on Lecturer Submission Page
     await page.getByTestId('edit-score-input').fill('0.85');
     await page.getByTestId('save-score-btn').click();

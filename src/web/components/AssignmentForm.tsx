@@ -103,14 +103,6 @@ export default function AssignmentForm({
       : '2026-12-31T23:59'
   );
   const [templateCode, setTemplateCode] = useState(initialData?.templateCode || '');
-  const [entryPointSpecText, setEntryPointSpecText] = useState(
-    initialData?.entryPointSpec
-      ? typeof initialData.entryPointSpec === 'string'
-        ? initialData.entryPointSpec
-        : JSON.stringify(initialData.entryPointSpec, null, 2)
-      : ''
-  );
-
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

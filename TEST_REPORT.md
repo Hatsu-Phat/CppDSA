@@ -315,3 +315,8 @@
 - Lệnh 2 (compose + Playwright): lecturer PASS (gồm nhập bộ test từ file, sửa điểm, chấm lại); student FAIL chỉ ở kiểm tra cuối: 1 lỗi console `401 (Unauthorized)` do trang chủ gọi `/api/auth/me` khi chưa đăng nhập; các bước chức năng trước đó đều qua.
 - Xem 9 ảnh (bản sao tại scratchpad Claude): trang chủ/đăng nhập/tài khoản/làm bài/lịch sử/nhập test/chi tiết bài nộp đúng yêu cầu; `home-dark.png` không khác `home-light.png` (chưa chứng minh được chế độ tối); chi tiết bài nộp (GV) hiện JSON vùng code thô và trạng thái `COMPLETED` thô.
 - Kết luận: FAIL vòng 1 → phản hồi đã ghi vào `handoff/tasks/T-0013.md` (vòng 2/3). KHÔNG merge, KHÔNG deploy giao diện mới; production giữ giao diện cũ + backend T-0012 (tương thích: API bỏ qua `entryPointSpec`/`entry` do giao diện cũ gửi). Vòng 2 chờ quota agy reset (~29 giờ) hoặc người dùng cho phép Claude sửa trực tiếp.
+
+## T-0013 vòng 2 — PASS (Claude nghiệm thu 2026-11-04)
+- Lệnh 1 (Claude tự chạy, thêm `--exclude=probs`): lint/format/build OK; web 33 test pass (vòng 1: 29), api 36 pass (58 integration skip do không có DB), grader 15, shared 25; `npm audit --audit-level=high` exit 0.
+- Lệnh 2 (Claude tự chạy E2E): `lecturer.spec.ts` + `student.spec.ts` 2/2 pass, 0 lỗi console (trang chủ đổi sang route web `/api-session` trả `{user:null}` khi chưa đăng nhập).
+- Ảnh: `home-dark.png` và `lecturer-dark.png` đúng chế độ tối; trang chi tiết bài nộp hiện từng vùng code và trạng thái tiếng Việt.

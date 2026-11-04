@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { getVerdictLabel, getVerdictBadgeClass } from '@/components/SubmissionResultCard';
 
 interface SubmissionDetail {
   id: string;
@@ -27,6 +27,81 @@ interface SubmissionDetail {
     memoryUsedKb: number;
     studentOutputExcerpt: string | null;
   }>;
+}
+
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case 'COMPLETED':
+      return 'Đã chấm xong';
+    case 'PENDING':
+      return 'Đang chờ chấm';
+    case 'RUNNING':
+      return 'Đang chấm bài';
+    case 'SYSTEM_ERROR':
+      return 'Lỗi hệ thống';
+    default:
+      return status;
+  }
+}
+
+function getStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'COMPLETED':
+      return 'badge-ac';
+    case 'SYSTEM_ERROR':
+      return 'badge-wa';
+    case 'RUNNING':
+    case 'PENDING':
+      return 'badge-pending';
+    default:
+      return 'badge-pending';
+  }
+}
+
+function renderSubmittedCode(codeStr: string) {
+  try {
+    const trimmed = codeStr.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed);
+        if (entries.length > 0) {
+          return (
+            <div
+              data-testid="detail-submitted-code"
+              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            >
+              {entries.map(([regionName, content]) => (
+                <div key={regionName}>
+                  <div
+                    style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      color: 'var(--text-muted)',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Vùng mã: <code>{regionName}</code>
+                  </div>
+                  <pre className="code-box" style={{ margin: 0 }}>
+                    <code>{String(content)}</code>
+                  </pre>
+                </div>
+              ))}
+            </div>
+          );
+        }
+      }
+    }
+  } catch {
+    // Fallback to plain text
+  }
+
+  return (
+    <pre className="code-box" data-testid="detail-submitted-code">
+      <code>{codeStr}</code>
+    </pre>
+  );
 }
 
 export default function SubmissionDetailPage() {
@@ -74,7 +149,7 @@ export default function SubmissionDetailPage() {
         if (sub.status === 'COMPLETED' || sub.status === 'SYSTEM_ERROR') {
           stopPolling();
           setRegradeNotice(
-            `Đã chấm lại hoàn tất: Trạng thái ${sub.status}, Điểm ${sub.score !== null ? Number(sub.score).toFixed(2) : 0}`
+            `Đã chấm lại hoàn tất: Trạng thái ${getStatusLabel(sub.status)}, Điểm ${sub.score !== null ? Number(sub.score).toFixed(2) : 0}`
           );
         }
       } catch {
@@ -265,16 +340,10 @@ export default function SubmissionDetailPage() {
           <div>
             <strong>Trạng thái:</strong>{' '}
             <span
-              className={`badge ${
-                submission.status === 'COMPLETED'
-                  ? 'badge-ac'
-                  : submission.status === 'SYSTEM_ERROR'
-                    ? 'badge-wa'
-                    : 'badge-pending'
-              }`}
+              className={`badge ${getStatusBadgeClass(submission.status)}`}
               data-testid="submission-status"
             >
-              {submission.status}
+              {getStatusLabel(submission.status)}
             </span>
           </div>
 
@@ -389,9 +458,7 @@ export default function SubmissionDetailPage() {
           <h4 style={{ color: 'var(--text-main)', marginBottom: '0.5rem' }}>
             Mã nguồn sinh viên nộp:
           </h4>
-          <pre className="code-box" data-testid="detail-submitted-code">
-            <code>{submission.submittedCode}</code>
-          </pre>
+          {renderSubmittedCode(submission.submittedCode)}
         </div>
 
         {/* Test Results Table */}
@@ -420,18 +487,10 @@ export default function SubmissionDetailPage() {
                     </td>
                     <td>
                       <span
-                        className={`badge ${
-                          t.verdict === 'AC'
-                            ? 'badge-ac'
-                            : t.verdict === 'WA'
-                              ? 'badge-wa'
-                              : t.verdict === 'TLE'
-                                ? 'badge-tle'
-                                : 'badge-ce'
-                        }`}
+                        className={`badge ${getVerdictBadgeClass(t.verdict)}`}
                         data-testid={`verdict-${idx}`}
                       >
-                        {t.verdict}
+                        {getVerdictLabel(t.verdict)}
                       </span>
                     </td>
                     <td>{t.executionTimeMs} ms</td>

@@ -65,6 +65,11 @@ test.describe('Student End-to-End Workflow', () => {
     await page.waitForFunction(
       () => document.documentElement.getAttribute('data-theme') === 'dark'
     );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
     await page.screenshot({ path: 'reports/ui/home-dark.png' });
 
     // Reset back to light
@@ -72,6 +77,11 @@ test.describe('Student End-to-End Workflow', () => {
     await page.waitForFunction(
       () => document.documentElement.getAttribute('data-theme') === 'light'
     );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
 
     // 0.3. Home Mobile (390x844)
     await page.setViewportSize({ width: 390, height: 844 });
