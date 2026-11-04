@@ -40,11 +40,12 @@ export default function StudentAssignmentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'work' | 'history'>('work');
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
 
-  // Stop polling helper
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -55,7 +56,6 @@ export default function StudentAssignmentPage() {
     }
   }, []);
 
-  // Fetch assignment submissions list
   const fetchSubmissions = useCallback(async () => {
     if (!assignmentId) return;
     try {
@@ -67,11 +67,10 @@ export default function StudentAssignmentPage() {
         }
       }
     } catch {
-      // Ignore network errors on background poll
+      // Ignore background fetch error
     }
   }, [assignmentId]);
 
-  // Poll single submission status
   const startPollingSubmission = useCallback(
     (submissionId: string) => {
       stopPolling();
@@ -93,27 +92,22 @@ export default function StudentAssignmentPage() {
             fetchSubmissions();
           }
         } catch {
-          // Ignore transient network errors
+          // Ignore transient poll error
         }
       };
 
-      // Immediate first check
       pollFn();
-
-      // Recurring check every 2 seconds
       pollTimerRef.current = setInterval(pollFn, 2000);
     },
     [stopPolling, fetchSubmissions]
   );
 
-  // Load specific submission details on demand (e.g. from history table)
   const handleSelectSubmission = async (id: string) => {
     try {
       const res = await fetch(`/api/submissions/${id}`);
       if (res.ok) {
         const data = await res.json();
         setActiveSubmission(data.submission);
-        // If not completed, resume polling
         if (data.submission.status === 'PENDING' || data.submission.status === 'RUNNING') {
           startPollingSubmission(id);
         } else {
@@ -125,7 +119,6 @@ export default function StudentAssignmentPage() {
     }
   };
 
-  // Initial load
   useEffect(() => {
     isMountedRef.current = true;
 
@@ -151,7 +144,6 @@ export default function StudentAssignmentPage() {
           if (isMountedRef.current) {
             const list: SubmissionData[] = subsData.submissions || [];
             setSubmissions(list);
-            // If there's an ongoing submission, auto-select and poll it
             if (list.length > 0) {
               const latest = list[0];
               setActiveSubmission(latest);
@@ -180,52 +172,20 @@ export default function StudentAssignmentPage() {
     };
   }, [assignmentId, startPollingSubmission, stopPolling]);
 
-  // Handle TEMPLATE submission
-  const handleTemplateSubmit = async (payload: { regions: Record<string, string> }) => {
-    setSubmitError(null);
-    setSubmitting(true);
-
+  const handleCopy = (text: string, key: string) => {
     try {
-      const res = await fetch(`/api/assignments/${assignmentId}/submissions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        if (res.status === 429) {
-          setSubmitError('Bạn đang nộp bài quá nhanh. Vui lòng đợi.');
-        } else if (res.status === 413) {
-          setSubmitError('Mã nguồn vượt quá dung lượng tối đa cho phép (64 KB).');
-        } else {
-          setSubmitError(data?.message || 'Nộp bài thất bại. Vui lòng thử lại.');
-        }
-        setSubmitting(false);
-        return;
-      }
-
-      const createdSub = data.submission as SubmissionData;
-      setActiveSubmission(createdSub);
-      startPollingSubmission(createdSub.id);
-      fetchSubmissions();
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => {
+        setCopiedKey(null);
+      }, 2000);
     } catch {
-      setSubmitError('Lỗi kết nối tới máy chủ khi nộp bài.');
-    } finally {
-      setSubmitting(false);
+      // ignore
     }
   };
 
-  // Handle FREE mode submission
-  const handleFreeSubmit = async (payload: {
-    studentSource: string;
-    entry: {
-      type: 'function' | 'method';
-      name: string;
-      className?: string;
-    };
-  }) => {
+  // Submit handler: automatically switches to history tab after submit
+  const handleGenericSubmit = async (payload: any) => {
     setSubmitError(null);
     setSubmitting(true);
 
@@ -252,6 +212,8 @@ export default function StudentAssignmentPage() {
 
       const createdSub = data.submission as SubmissionData;
       setActiveSubmission(createdSub);
+      // Auto switch to history tab
+      setActiveTab('history');
       startPollingSubmission(createdSub.id);
       fetchSubmissions();
     } catch {
@@ -284,6 +246,9 @@ export default function StudentAssignmentPage() {
 
   const deadlineDate = new Date(assignment.deadline);
   const isPastDeadline = Date.now() > deadlineDate.getTime();
+  const pendingCount = submissions.filter(
+    (s) => s.status === 'PENDING' || s.status === 'RUNNING'
+  ).length;
 
   return (
     <div>
@@ -297,157 +262,217 @@ export default function StudentAssignmentPage() {
         </Link>
       </div>
 
-      {/* Assignment Header / Details Card */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
+      {/* Assignment Header Card */}
+      <div className="card" style={{ marginBottom: '1.25rem' }}>
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.75rem',
-            marginBottom: '0.5rem',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            marginBottom: '0.75rem',
             flexWrap: 'wrap',
           }}
         >
-          <h2 style={{ margin: 0, color: 'var(--neutral-900)' }} data-testid="assignment-title">
+          <h2
+            style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.5rem' }}
+            data-testid="assignment-title"
+          >
             {assignment.title}
           </h2>
-          <span
-            className="badge badge-primary"
-            data-testid="assignment-mode-badge"
-            style={{
-              fontSize: '0.875rem',
-              backgroundColor:
-                assignment.mode === 'TEMPLATE' ? 'var(--primary-light)' : 'var(--neutral-200)',
-              color: assignment.mode === 'TEMPLATE' ? 'var(--primary)' : 'var(--neutral-700)',
-            }}
-          >
-            {assignment.mode === 'TEMPLATE' ? 'Chế độ Khung mẫu (TEMPLATE)' : 'Chế độ Tự do (FREE)'}
-          </span>
-          {isPastDeadline && (
-            <span
-              className="badge badge-warning"
-              data-testid="assignment-late-notice"
-              style={{ fontSize: '0.85rem' }}
-            >
-              Hạn nộp đã qua — Bài nộp sẽ được tính là Nộp trễ
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span className="chip" data-testid="chip-tl">
+              <strong>TL:</strong> {assignment.time_limit_ms} ms
             </span>
-          )}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            gap: '1.5rem',
-            fontSize: '0.875rem',
-            color: 'var(--neutral-600)',
-            marginBottom: '1rem',
-            flexWrap: 'wrap',
-          }}
-        >
-          <span>
-            <strong>Thời gian tối đa (TL):</strong> {assignment.time_limit_ms} ms
-          </span>
-          <span>
-            <strong>Bộ nhớ tối đa (ML):</strong> {assignment.memory_limit_mb} MB
-          </span>
-          <span>
-            <strong>Hạn nộp:</strong> {deadlineDate.toLocaleString('vi-VN')}
-          </span>
-        </div>
-
-        {assignment.description && (
-          <div
-            style={{
-              padding: '1rem',
-              backgroundColor: 'var(--neutral-50)',
-              borderRadius: 'var(--border-radius)',
-              border: '1px solid var(--neutral-200)',
-              marginBottom: '1rem',
-              whiteSpace: 'pre-wrap',
-              fontSize: '0.95rem',
-            }}
-          >
-            {assignment.description}
+            <span className="chip" data-testid="chip-ml">
+              <strong>ML:</strong> {assignment.memory_limit_mb} MB
+            </span>
+            <span className="chip" data-testid="chip-deadline">
+              <strong>Hạn:</strong> {deadlineDate.toLocaleString('vi-VN')}
+            </span>
+            {isPastDeadline && (
+              <span className="badge badge-warning" data-testid="assignment-late-notice">
+                Đã quá hạn
+              </span>
+            )}
           </div>
-        )}
-
-        {/* Public sample test cases (if provided by API) */}
-        {assignment.sampleTests && assignment.sampleTests.length > 0 && (
-          <div style={{ marginTop: '1rem' }} data-testid="sample-tests-section">
-            <h5 style={{ marginBottom: '0.5rem', color: 'var(--neutral-900)' }}>
-              Ví dụ minh họa (Test mẫu công khai):
-            </h5>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {assignment.sampleTests.map((sample, idx) => (
-                <div
-                  key={sample.id || idx}
-                  style={{
-                    border: '1px solid var(--neutral-300)',
-                    borderRadius: 'var(--border-radius)',
-                    padding: '0.75rem',
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>
-                    Ví dụ {idx + 1}:
-                  </div>
-                  <div className="form-row">
-                    <div className="form-col">
-                      <span style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
-                        Đầu vào (Input):
-                      </span>
-                      <pre className="code-box" style={{ margin: 0, padding: '0.5rem' }}>
-                        <code>{sample.input_data}</code>
-                      </pre>
-                    </div>
-                    <div className="form-col">
-                      <span style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
-                        Kết quả kỳ vọng (Expected Output):
-                      </span>
-                      <pre className="code-box" style={{ margin: 0, padding: '0.5rem' }}>
-                        <code>{sample.expected_output}</code>
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* Submission Error Banner */}
+      {/* Tabs navigation */}
+      <div className="tabs" style={{ marginBottom: '1.25rem' }}>
+        <button
+          type="button"
+          className={`tab-item ${activeTab === 'work' ? 'active' : ''}`}
+          onClick={() => setActiveTab('work')}
+          data-testid="tab-work"
+        >
+          Làm bài
+        </button>
+        <button
+          type="button"
+          className={`tab-item ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => setActiveTab('history')}
+          data-testid="tab-history"
+        >
+          Lịch sử nộp
+          {pendingCount > 0 && (
+            <span className="badge badge-pending" style={{ marginLeft: '4px', fontSize: '0.7rem' }}>
+              {pendingCount} đang chấm
+            </span>
+          )}
+        </button>
+      </div>
+
       {submitError && (
         <div className="alert alert-danger" data-testid="submit-error" role="alert">
           {submitError}
         </div>
       )}
 
-      {/* Active Evaluation / Result View */}
-      {activeSubmission && <SubmissionResultCard submission={activeSubmission} polling={polling} />}
+      {/* Tab 1: Work */}
+      {activeTab === 'work' && (
+        <div>
+          {/* Problem description & public samples */}
+          {assignment.description && (
+            <div
+              className="card"
+              style={{
+                marginBottom: '1.25rem',
+                whiteSpace: 'pre-wrap',
+                fontSize: '0.95rem',
+                lineHeight: 1.6,
+              }}
+              data-testid="assignment-description"
+            >
+              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-main)', fontSize: '1rem' }}>
+                Mô tả yêu cầu
+              </h4>
+              {assignment.description}
+            </div>
+          )}
 
-      {/* Code Editor Card */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        {assignment.mode === 'TEMPLATE' ? (
-          <TemplateEditor
-            templateCode={assignment.template_code || ''}
-            onSubmit={handleTemplateSubmit}
-            submitting={submitting || polling}
-          />
-        ) : (
-          <FreeModeEditor
-            entryPointSpec={assignment.entry_point_spec}
-            onSubmit={handleFreeSubmit}
-            submitting={submitting || polling}
-          />
-        )}
-      </div>
+          {/* Public Samples */}
+          {assignment.sampleTests && assignment.sampleTests.length > 0 && (
+            <div
+              className="card"
+              style={{ marginBottom: '1.25rem' }}
+              data-testid="sample-tests-section"
+            >
+              <h4 style={{ marginBottom: '0.75rem', color: 'var(--text-main)', fontSize: '1rem' }}>
+                Ví dụ mẫu
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {assignment.sampleTests.map((sample, idx) => (
+                  <div
+                    key={sample.id || idx}
+                    style={{
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--border-radius)',
+                      padding: '0.75rem',
+                      background: 'var(--bg-page)',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                      Ví dụ {idx + 1}
+                    </div>
+                    <div className="form-row">
+                      <div className="form-col">
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '0.25rem',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Đầu vào (Input):
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}
+                            onClick={() => handleCopy(sample.input_data, `in-${idx}`)}
+                          >
+                            {copiedKey === `in-${idx}` ? 'Đã chép!' : 'Sao chép'}
+                          </button>
+                        </div>
+                        <pre
+                          className="code-box"
+                          style={{ margin: 0, padding: '0.5rem', maxHeight: '120px' }}
+                        >
+                          <code>{sample.input_data}</code>
+                        </pre>
+                      </div>
 
-      {/* Submissions History Table */}
-      <SubmissionHistoryTable
-        submissions={submissions}
-        onSelectSubmission={handleSelectSubmission}
-        selectedSubmissionId={activeSubmission?.id}
-      />
+                      <div className="form-col">
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '0.25rem',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Kết quả kỳ vọng (Expected Output):
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}
+                            onClick={() => handleCopy(sample.expected_output, `out-${idx}`)}
+                          >
+                            {copiedKey === `out-${idx}` ? 'Đã chép!' : 'Sao chép'}
+                          </button>
+                        </div>
+                        <pre
+                          className="code-box"
+                          style={{ margin: 0, padding: '0.5rem', maxHeight: '120px' }}
+                        >
+                          <code>{sample.expected_output}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Editor */}
+          <div className="card">
+            {assignment.mode === 'TEMPLATE' ? (
+              <TemplateEditor
+                templateCode={assignment.template_code || ''}
+                onSubmit={handleGenericSubmit}
+                submitting={submitting || polling}
+              />
+            ) : (
+              <FreeModeEditor onSubmit={handleGenericSubmit} submitting={submitting || polling} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 2: History */}
+      {activeTab === 'history' && (
+        <div>
+          {/* Active / Selected submission result */}
+          {activeSubmission && (
+            <SubmissionResultCard submission={activeSubmission} polling={polling} />
+          )}
+
+          {/* History list */}
+          <SubmissionHistoryTable
+            submissions={submissions}
+            onSelectSubmission={handleSelectSubmission}
+            selectedSubmissionId={activeSubmission?.id}
+          />
+        </div>
+      )}
     </div>
   );
 }

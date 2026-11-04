@@ -55,6 +55,56 @@ export function computeOverallVerdict(submission: SubmissionData): string {
   return 'AC';
 }
 
+export function getVerdictLabel(verdict: string): string {
+  switch (verdict.toUpperCase()) {
+    case 'AC':
+      return 'Đúng';
+    case 'WA':
+      return 'Sai kết quả';
+    case 'TLE':
+      return 'Quá thời gian';
+    case 'MLE':
+      return 'Quá bộ nhớ';
+    case 'RE':
+      return 'Lỗi khi chạy';
+    case 'CE':
+      return 'Lỗi biên dịch';
+    case 'SE':
+    case 'SYSTEM_ERROR':
+      return 'Lỗi hệ thống';
+    case 'PENDING':
+    case 'RUNNING':
+      return 'Đang chấm';
+    default:
+      return verdict;
+  }
+}
+
+export function getVerdictBadgeClass(verdict: string): string {
+  switch (verdict.toUpperCase()) {
+    case 'AC':
+      return 'badge-ac';
+    case 'WA':
+      return 'badge-wa';
+    case 'TLE':
+      return 'badge-tle';
+    case 'MLE':
+      return 'badge-mle';
+    case 'CE':
+      return 'badge-ce';
+    case 'RE':
+      return 'badge-re';
+    case 'SE':
+    case 'SYSTEM_ERROR':
+      return 'badge-danger';
+    case 'PENDING':
+    case 'RUNNING':
+      return 'badge-pending';
+    default:
+      return 'badge-pending';
+  }
+}
+
 export default function SubmissionResultCard({
   submission,
   polling = false,
@@ -67,39 +117,16 @@ export default function SubmissionResultCard({
   const isFinished = status === 'COMPLETED' || status === 'SYSTEM_ERROR';
   const overallVerdict = computeOverallVerdict(submission);
 
-  const getVerdictBadgeClass = (verdict: string) => {
-    switch (verdict.toUpperCase()) {
-      case 'AC':
-        return 'badge-ac';
-      case 'WA':
-        return 'badge-wa';
-      case 'TLE':
-        return 'badge-tle';
-      case 'MLE':
-        return 'badge-tle';
-      case 'CE':
-        return 'badge-ce';
-      case 'RE':
-        return 'badge-danger';
-      case 'SE':
-        return 'badge-danger';
-      default:
-        return 'badge-pending';
-    }
-  };
-
   const formattedScore =
     submission.score !== null && submission.score !== undefined
       ? Number(submission.score).toFixed(2)
-      : '-';
+      : '—';
 
   return (
     <div
       className="card"
       data-testid="submission-result-card"
       style={{
-        border: '1px solid var(--neutral-300)',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
         marginBottom: '1.5rem',
       }}
     >
@@ -110,20 +137,17 @@ export default function SubmissionResultCard({
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: '0.5rem',
-          borderBottom: '1px solid var(--neutral-200)',
+          borderBottom: '1px solid var(--border-color)',
           paddingBottom: '0.75rem',
           marginBottom: '1rem',
         }}
       >
         <div>
-          <h4 style={{ margin: 0, color: 'var(--neutral-900)' }}>
-            Kết quả bài nộp{' '}
-            <span style={{ fontSize: '0.85rem', fontWeight: 400, color: 'var(--neutral-600)' }}>
-              (ID: {submission.id.substring(0, 8)}...)
-            </span>
+          <h4 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.1rem' }}>
+            Kết quả bài nộp
           </h4>
           {submission.createdAt && (
-            <span style={{ fontSize: '0.8rem', color: 'var(--neutral-600)' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               Nộp lúc: {new Date(submission.createdAt).toLocaleString('vi-VN')}
             </span>
           )}
@@ -139,17 +163,17 @@ export default function SubmissionResultCard({
           <span
             className={`badge ${
               status === 'COMPLETED'
-                ? 'badge-completed'
+                ? 'badge-ac'
                 : status === 'SYSTEM_ERROR'
                   ? 'badge-wa'
                   : 'badge-pending'
             }`}
             data-testid="submission-status"
           >
-            {status === 'PENDING' && (polling ? 'Đang chờ chấm (PENDING)...' : 'PENDING')}
-            {status === 'RUNNING' && (polling ? 'Đang chấm bài (RUNNING)...' : 'RUNNING')}
-            {status === 'COMPLETED' && 'Đã chấm xong (COMPLETED)'}
-            {status === 'SYSTEM_ERROR' && 'Lỗi hệ thống (SYSTEM_ERROR)'}
+            {status === 'PENDING' && (polling ? 'Đang chờ chấm...' : 'Đang chờ chấm')}
+            {status === 'RUNNING' && (polling ? 'Đang chấm bài...' : 'Đang chấm bài')}
+            {status === 'COMPLETED' && 'Đã chấm xong'}
+            {status === 'SYSTEM_ERROR' && 'Lỗi hệ thống'}
           </span>
         </div>
       </div>
@@ -157,7 +181,7 @@ export default function SubmissionResultCard({
       {status === 'SYSTEM_ERROR' && (
         <div className="alert alert-danger" data-testid="system-error-alert" role="alert">
           <strong>Lỗi hệ thống:</strong> Hệ thống gặp sự cố trong quá trình chấm bài. Vui lòng thử
-          lại sau ít phút.
+          lại sau.
         </div>
       )}
 
@@ -168,24 +192,33 @@ export default function SubmissionResultCard({
             gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
             gap: '1rem',
             padding: '1rem',
-            backgroundColor: 'var(--neutral-50)',
+            backgroundColor: 'var(--bg-page)',
+            border: '1px solid var(--border-color)',
             borderRadius: 'var(--border-radius)',
             marginBottom: '1rem',
           }}
         >
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--neutral-600)' }}>Kết quả chung</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700 }} data-testid="submission-verdict">
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Kết quả chung</div>
+            <div
+              style={{ fontSize: '1.1rem', fontWeight: 700, marginTop: '0.2rem' }}
+              data-testid="submission-verdict"
+            >
               <span className={`badge ${getVerdictBadgeClass(overallVerdict)}`}>
-                {overallVerdict}
+                {getVerdictLabel(overallVerdict)}
               </span>
             </div>
           </div>
 
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--neutral-600)' }}>Điểm số</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Điểm số</div>
             <div
-              style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary)' }}
+              style={{
+                fontSize: '1.25rem',
+                fontWeight: 700,
+                color: 'var(--primary)',
+                marginTop: '0.1rem',
+              }}
               data-testid="submission-score"
             >
               {formattedScore}
@@ -194,9 +227,14 @@ export default function SubmissionResultCard({
 
           {submission.totalTests !== undefined && (
             <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--neutral-600)' }}>Số test đạt</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Số test đạt</div>
               <div
-                style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--neutral-900)' }}
+                style={{
+                  fontSize: '1.25rem',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  marginTop: '0.1rem',
+                }}
                 data-testid="pass-ratio"
               >
                 {submission.passedTests ?? 0} / {submission.totalTests}
@@ -208,15 +246,13 @@ export default function SubmissionResultCard({
 
       {submission.compileOutput && (
         <div style={{ marginBottom: '1rem' }} data-testid="compile-output-section">
-          <h5 style={{ color: 'var(--danger)', marginBottom: '0.5rem' }}>
+          <h5 style={{ color: 'var(--verdict-wa)', marginBottom: '0.5rem' }}>
             Thông báo lỗi biên dịch (Compile Output):
           </h5>
           <pre
             className="code-box"
             data-testid="compile-output"
             style={{
-              backgroundColor: '#1a1a1a',
-              color: '#ff8a80',
               maxHeight: '260px',
               overflowY: 'auto',
             }}
@@ -228,15 +264,15 @@ export default function SubmissionResultCard({
 
       {submission.tests && submission.tests.length > 0 && (
         <div style={{ marginTop: '1rem' }}>
-          <h5 style={{ marginBottom: '0.5rem', color: 'var(--neutral-900)' }}>
-            Chi tiết kết quả từng bài kiểm thử ẩn:
+          <h5 style={{ marginBottom: '0.5rem', color: 'var(--text-main)' }}>
+            Chi tiết kết quả từng bài kiểm thử:
           </h5>
           <div className="table-responsive">
             <table className="table" data-testid="test-results-table">
               <thead>
                 <tr>
                   <th style={{ width: '120px' }}>Bài kiểm thử</th>
-                  <th style={{ width: '120px' }}>Kết quả</th>
+                  <th style={{ width: '150px' }}>Kết quả</th>
                   <th>Thời gian chạy</th>
                   <th>Bộ nhớ</th>
                 </tr>
@@ -255,7 +291,7 @@ export default function SubmissionResultCard({
                           className={`badge ${getVerdictBadgeClass(test.verdict)}`}
                           data-testid={`test-verdict-${testIndex}`}
                         >
-                          {test.verdict}
+                          {getVerdictLabel(test.verdict)}
                         </span>
                       </td>
                       <td>{time} ms</td>

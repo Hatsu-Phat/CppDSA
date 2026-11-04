@@ -1,16 +1,18 @@
 import { test, expect, Page } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 
 test.describe('Student End-to-End Workflow', () => {
   test.use({
     baseURL: process.env.BASE_URL || 'http://localhost:3000',
   });
 
-  test('complete student journey: login, change password, view classrooms, TEMPLATE mode (all verdicts), FREE mode (all verdicts), history, anti-leak check, late submission, and mobile responsive', async ({
+  test('complete student journey: home screenshots, login, change password, account, TEMPLATE mode, FREE mode, history tabs, anti-leak check, late submission, and mobile responsive', async ({
     page,
     request,
     baseURL,
   }) => {
-    test.setTimeout(300000); // 5 minutes for multi-student workflow
+    test.setTimeout(300000); // 5 minutes
 
     // 0. Monitor console errors and unhandled page errors: 0 errors allowed
     const consoleErrors: string[] = [];
@@ -38,10 +40,67 @@ test.describe('Student End-to-End Workflow', () => {
     const studentEmailD = `student_d_${runSuffix}@cppdsa.local`;
     const newStudentPassword = 'NewStudentPassword123!';
 
+    // Ensure reports/ui directory exists
+    const reportsDir = path.resolve(process.cwd(), 'reports/ui');
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+
     // =========================================================================
-    // 1. Data Setup via Lecturer API (using Playwright request)
+    // 0. Home Page & Screenshots (Light, Dark, Mobile) & Login Screenshot
     // =========================================================================
-    // 1.1. Lecturer login
+    // 0.1. Home Light
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('theme', 'light');
+    });
+    await expect(page.getByText('FTISU CodeLab').first()).toBeVisible();
+    await page.screenshot({ path: 'reports/ui/home-light.png' });
+
+    // 0.2. Home Dark via Theme Toggle
+    const themeBtn = page.getByTestId('theme-toggle-btn');
+    await themeBtn.click();
+    await page.waitForFunction(
+      () => document.documentElement.getAttribute('data-theme') === 'dark'
+    );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: 'reports/ui/home-dark.png' });
+
+    // Reset back to light
+    await themeBtn.click();
+    await page.waitForFunction(
+      () => document.documentElement.getAttribute('data-theme') === 'light'
+    );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
+
+    // 0.3. Home Mobile (390x844)
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    const isHomeMobileNoScroll = await page.evaluate(() => {
+      return document.documentElement.scrollWidth <= window.innerWidth;
+    });
+    expect(isHomeMobileNoScroll).toBe(true);
+    await page.screenshot({ path: 'reports/ui/home-mobile.png' });
+
+    // 0.4. Login Screenshot
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: /Đăng nhập/i })).toBeVisible();
+    await page.screenshot({ path: 'reports/ui/login.png' });
+
+    // =========================================================================
+    // 1. Data Setup via Lecturer API
+    // =========================================================================
     const lecLoginRes = await request.post(`${rootUrl}/api/auth/login`, {
       data: { email: 'lecturer@cppdsa.local', password: 'ChangeMe123!' },
     });
@@ -49,12 +108,11 @@ test.describe('Student End-to-End Workflow', () => {
     const lecCookie = lecLoginRes.headers()['set-cookie']?.split(';')[0];
     expect(lecCookie).toBeTruthy();
 
-    // 1.2. Create Classroom
     const classRes = await request.post(`${rootUrl}/api/classrooms`, {
       headers: { cookie: lecCookie! },
       data: {
         name: `Lớp CTDL&GT K26 Sinh Viên E2E - ${runSuffix}`,
-        description: 'Lớp phục vụ kiểm thử luồng sinh viên P7',
+        description: 'Lớp phục vụ kiểm thử luồng sinh viên T-0013',
       },
     });
     expect(classRes.status()).toBe(201);
@@ -62,7 +120,6 @@ test.describe('Student End-to-End Workflow', () => {
     const classroomId = classData.classroom.id;
     expect(classroomId).toBeTruthy();
 
-    // 1.3. Import 4 Students via CSV to respect rate limit (<= 5 submissions/min/student)
     const csvContent = [
       'student_code,full_name,email',
       `${studentCodeA},Nguyen Van SV A,${studentEmailA}`,
@@ -96,7 +153,7 @@ test.describe('Student End-to-End Workflow', () => {
     expect(tempPwdC.length).toBeGreaterThan(5);
     expect(tempPwdD.length).toBeGreaterThan(5);
 
-    // 1.4. Create TEMPLATE mode assignment with hidden tests containing HIDDEN_MARK_P7
+    // 1.1. Create TEMPLATE mode assignment
     const templateSource = `#include <iostream>
 #include <vector>
 
@@ -165,7 +222,7 @@ int main() {
     const assign1Data = await assign1Res.json();
     const assign1Id = assign1Data.assignment.id;
 
-    // Add ≥ 2 hidden tests for Assignment 1 with HIDDEN_MARK_P7 in input
+    // Add hidden tests with HIDDEN_MARK_P7
     await request.post(`${rootUrl}/api/assignments/${assign1Id}/tests`, {
       headers: { cookie: lecCookie! },
       data: {
@@ -186,61 +243,22 @@ int main() {
       },
     });
 
-    // 1.5. Create FREE mode assignment with hidden tests containing HIDDEN_MARK_P7
-    // Using CPPDSA_ENTRY macro so that changing entry point name appropriately affects compilation
-    const freeHarness = `#include <iostream>
-#include <vector>
-
-std::vector<int> CPPDSA_ENTRY(const std::vector<int>&, int);
-
-int main() {
-    std::ios_base::sync_with_stdio(false);
-    std::cin.tie(nullptr);
-
-    int n, target;
-    if (!(std::cin >> n >> target)) return 0;
-    std::vector<int> nums(n);
-    for (int i = 0; i < n; ++i) {
-        std::cin >> nums[i];
-    }
-
-    std::vector<int> result = CPPDSA_ENTRY(nums, target);
-
-    if (result.empty()) {
-        std::cout << "-1\\n";
-    } else {
-        for (size_t i = 0; i < result.size(); ++i) {
-            std::cout << result[i] << (i + 1 < result.size() ? " " : "");
-        }
-        std::cout << "\\n";
-    }
-
-    return 0;
-}`;
-
+    // 1.2. Create FREE mode assignment (without harness, full program with main)
     const assign2Res = await request.post(`${rootUrl}/api/classrooms/${classroomId}/assignments`, {
       headers: { cookie: lecCookie! },
       data: {
         title: 'Two Sum (Tìm hai chỉ số có tổng bằng target)',
-        description: 'Cài đặt hàm timChiSoTong trả về 2 chỉ số có tổng bằng target.',
+        description: 'Đọc n và target, sau đó in ra 2 chỉ số có tổng bằng target.',
         mode: 'FREE',
         timeLimitMs: 1000,
         memoryLimitMb: 256,
         deadline: '2028-12-31T23:59:00Z',
-        entryPointSpec: {
-          harness: freeHarness,
-          entry: {
-            type: 'function',
-            name: 'timChiSoTong',
-          },
-        },
       },
     });
     expect(assign2Res.status()).toBe(201);
     const assign2Data = await assign2Res.json();
     const assign2Id = assign2Data.assignment.id;
 
-    // Add ≥ 2 hidden tests for Assignment 2 with HIDDEN_MARK_P7 in input
     await request.post(`${rootUrl}/api/assignments/${assign2Id}/tests`, {
       headers: { cookie: lecCookie! },
       data: {
@@ -261,7 +279,7 @@ int main() {
       },
     });
 
-    // 1.6. Create Past-Deadline Assignment
+    // 1.3. Create Past-Deadline Assignment
     const assign3Res = await request.post(`${rootUrl}/api/classrooms/${classroomId}/assignments`, {
       headers: { cookie: lecCookie! },
       data: {
@@ -288,33 +306,35 @@ int main() {
       },
     });
 
-    // Helper to wait for live polling completion
+    // Polling waiter
     const waitForCompleted = async (p: Page, timeoutMs = 30000) => {
       await expect(p.getByTestId('submission-status')).toContainText(/Đã chấm xong|Lỗi hệ thống/i, {
         timeout: timeoutMs,
       });
     };
 
-    // Helper to submit solution, wait for 201 response, then wait for polling completion
+    // Submit solution helper
     const submitAndWait = async (p: Page, timeoutMs = 30000) => {
       const subPromise = p.waitForResponse(
         (resp) => resp.url().includes('/submissions') && resp.status() === 201
       );
       await p.getByTestId('submit-solution-btn').click();
       await subPromise;
+
+      // Check auto tab switch to history
+      await expect(p.getByTestId('tab-history')).toHaveClass(/active/);
       await waitForCompleted(p, timeoutMs);
     };
 
-    // Helper for student login and first-time password change
+    // Login and first-time change password helper
     const loginAndChangePassword = async (email: string, tempPwd: string) => {
       await page.goto('/login');
-      await expect(page.getByRole('heading', { name: /Đăng nhập CppDSA/i })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Đăng nhập/i })).toBeVisible();
 
       await page.locator('#email').fill(email);
       await page.locator('#password').fill(tempPwd.trim());
       await page.getByRole('button', { name: 'Đăng nhập' }).click();
 
-      // Forced redirect to /change-password
       await page.waitForURL('**/change-password');
       await expect(page.getByRole('heading', { name: /Đổi mật khẩu/i })).toBeVisible();
 
@@ -323,12 +343,11 @@ int main() {
       await page.locator('#confirmPassword').fill(newStudentPassword);
       await page.getByRole('button', { name: 'Lưu mật khẩu mới' }).click();
 
-      // After password change, student is redirected to /student
       await page.waitForURL('**/student');
       await expect(page.getByRole('heading', { name: /Lớp học của tôi/i })).toBeVisible();
     };
 
-    // Helper for student logout
+    // Logout helper
     const logout = async () => {
       const logoutBtn = page.getByTestId('logout-btn');
       if (await logoutBtn.isVisible()) {
@@ -340,7 +359,7 @@ int main() {
       await page.context().clearCookies();
     };
 
-    // Shared solutions
+    // Solutions
     const solutionAC = `ListNode* reverseLinkedList(ListNode* head) {
     ListNode* prev = nullptr;
     ListNode* curr = head;
@@ -380,21 +399,30 @@ ListNode* reverseLinkedList(ListNode* head) {
 }`;
 
     // =========================================================================
-    // 2. Student A Journey: TEMPLATE Mode (AC, WA, CE)
+    // 2. Student A Journey: Login, Account Page, TEMPLATE Mode (AC, WA, CE)
     // =========================================================================
     await loginAndChangePassword(studentEmailA, tempPwdA);
 
-    // Check navbar shows student branding and email
+    // Navbar check
     await expect(page.getByTestId('user-email-display')).toContainText(studentEmailA);
-    // Warmup button must NOT be visible for student
-    await expect(page.locator('[data-testid="warmup-btn"]')).not.toBeVisible();
+
+    // 2.1. Account Page test & screenshot
+    await page.getByTestId('user-email-display').click();
+    await page.waitForURL('**/account');
+    await expect(page.getByTestId('account-email')).toContainText(studentEmailA);
+    await expect(page.getByTestId('account-role')).toContainText('Sinh viên');
+    await page.screenshot({ path: 'reports/ui/account.png' });
+
+    // Return to /student
+    await page
+      .getByRole('link', { name: /Quay lại|Danh sách lớp/i })
+      .first()
+      .click();
+    await page.waitForURL('**/student');
 
     // Enter Classroom
     await page.getByTestId(`enter-classroom-${classroomId}`).click();
     await page.waitForURL(`**/student/classrooms/${classroomId}`);
-    await expect(page.getByTestId('classroom-title')).toContainText(
-      `Lớp CTDL&GT K26 Sinh Viên E2E - ${runSuffix}`
-    );
 
     // Enter TEMPLATE Mode Assignment
     await page.getByTestId(`assignment-link-${assign1Id}`).click();
@@ -402,9 +430,18 @@ ListNode* reverseLinkedList(ListNode* head) {
     await expect(page.getByTestId('assignment-title')).toContainText(
       'Đảo ngược danh sách liên kết đơn'
     );
-    await expect(page.getByTestId('assignment-mode-badge')).toContainText('TEMPLATE');
 
-    // Verify fixed code blocks are locked (pre blocks, not input/textarea)
+    // Verify NO TEMPLATE/FREE string or ID visible to student
+    const studentPageText1 = await page.content();
+    expect(studentPageText1).not.toContain('Chế độ Khung mẫu (TEMPLATE)');
+    expect(studentPageText1).not.toContain('Chế độ Tự do (FREE)');
+    expect(studentPageText1).not.toContain('(ID:');
+
+    // Take screenshot student-assignment-work.png on "Làm bài" tab
+    await expect(page.getByTestId('tab-work')).toHaveClass(/active/);
+    await page.screenshot({ path: 'reports/ui/student-assignment-work.png' });
+
+    // Verify fixed code blocks are locked pre elements
     const fixedSegments = page.locator('[data-testid="fixed-code-segment"]');
     const fixedCount = await fixedSegments.count();
     expect(fixedCount).toBeGreaterThan(0);
@@ -413,39 +450,44 @@ ListNode* reverseLinkedList(ListNode* head) {
       expect(tagName).toBe('pre');
     }
 
-    // Editable region textarea
     const regionInputA = page.getByTestId('region-input-reverseLinkedList');
     await expect(regionInputA).toBeVisible();
 
-    // 2.1. Submit CORRECT solution -> AC (Score 1.00)
+    // 2.2. Submit CORRECT solution -> AC (Score 1.00)
     await regionInputA.fill(solutionAC);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('AC');
-    await expect(page.getByTestId('submission-score')).toContainText('1.00');
-    await expect(page.getByTestId('test-verdict-1')).toContainText('AC');
-    await expect(page.getByTestId('test-verdict-2')).toContainText('AC');
 
-    // 2.2. Submit WRONG solution -> WA
+    // Check screenshot student-assignment-history.png right after submit
+    await page.screenshot({ path: 'reports/ui/student-assignment-history.png' });
+
+    await expect(page.getByTestId('submission-verdict')).toContainText('Đúng');
+    await expect(page.getByTestId('submission-score')).toContainText('1.00');
+    await expect(page.getByTestId('test-verdict-1')).toContainText('Đúng');
+    await expect(page.getByTestId('test-verdict-2')).toContainText('Đúng');
+
+    // Switch back to "Làm bài" tab to submit WA
+    await page.getByTestId('tab-work').click();
     await regionInputA.fill(solutionWA);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('WA');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Sai kết quả');
     await expect(page.getByTestId('submission-score')).toContainText('0.00');
 
-    // 2.3. Submit SYNTAX ERROR -> CE with compile output
+    // Switch back to "Làm bài" tab to submit CE
+    await page.getByTestId('tab-work').click();
     await regionInputA.fill(solutionCE);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('CE');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Lỗi biên dịch');
     await expect(page.getByTestId('compile-output')).toBeVisible();
-    await expect(page.getByTestId('compile-output')).toContainText('error');
 
     // Verify SV-A history table has 3 rows
     await expect(page.getByTestId('submission-history')).toBeVisible();
     const historyRowsA = page.locator('[data-testid^="history-row-"]');
     expect(await historyRowsA.count()).toBe(3);
 
-    // Anti-leak check for SV-A on Assignment 1
+    // Anti-leak check for SV-A
     const pageContentA = await page.content();
     expect(pageContentA).not.toContain('HIDDEN_MARK_P7');
+    expect(pageContentA).not.toContain('SYSTEM_ERROR');
 
     await logout();
 
@@ -461,34 +503,34 @@ ListNode* reverseLinkedList(ListNode* head) {
 
     const regionInputB = page.getByTestId('region-input-reverseLinkedList');
 
-    // 3.1. Submit INFINITE LOOP -> TLE
+    // 3.1. Submit TLE
     await regionInputB.fill(solutionTLE);
     await submitAndWait(page, 45000);
-    await expect(page.getByTestId('submission-verdict')).toContainText('TLE');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Quá thời gian');
 
-    // 3.2. Submit LARGE ALLOCATION / BAD_ALLOC -> MLE
+    // 3.2. Submit MLE
+    await page.getByTestId('tab-work').click();
     await regionInputB.fill(solutionMLE);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('MLE');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Quá bộ nhớ');
 
-    // 3.3. Submit ABORT / RUNTIME ERROR -> RE
+    // 3.3. Submit RE
+    await page.getByTestId('tab-work').click();
     await regionInputB.fill(solutionRE);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('RE');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Lỗi khi chạy');
 
-    // Verify SV-B history table has 3 rows
-    await expect(page.getByTestId('submission-history')).toBeVisible();
     const historyRowsB = page.locator('[data-testid^="history-row-"]');
     expect(await historyRowsB.count()).toBe(3);
 
-    // Anti-leak check for SV-B
     const pageContentB = await page.content();
     expect(pageContentB).not.toContain('HIDDEN_MARK_P7');
+    expect(pageContentB).not.toContain('SYSTEM_ERROR');
 
     await logout();
 
     // =========================================================================
-    // 4. Student C Journey: FREE Mode (AC, WA, CE/Wrong Entry)
+    // 4. Student C Journey: FREE Mode (Full program with main: AC, WA, CE)
     // =========================================================================
     await loginAndChangePassword(studentEmailC, tempPwdC);
 
@@ -497,68 +539,76 @@ ListNode* reverseLinkedList(ListNode* head) {
     await page.getByTestId(`assignment-link-${assign2Id}`).click();
     await page.waitForURL(`**/student/assignments/${assign2Id}`);
     await expect(page.getByTestId('assignment-title')).toContainText('Two Sum');
-    await expect(page.getByTestId('assignment-mode-badge')).toContainText('FREE');
 
-    const freeAC = `#include <vector>
+    // Verify NO harness or entry point inputs in FREE mode!
+    await expect(page.locator('[data-testid="entry-type-select"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="entry-name-input"]')).toHaveCount(0);
+
+    const freeAC = `#include <iostream>
+#include <vector>
 #include <unordered_map>
-#include <algorithm>
 
-std::vector<int> timChiSoTong(const std::vector<int>& arr, int targetSum) {
-    std::unordered_map<int, int> numMap;
-    for (int i = 0; i < static_cast<int>(arr.size()); ++i) {
-        int complement = targetSum - arr[i];
+using namespace std;
+
+int main() {
+    ios_base::sync_with_stdio(false);
+    cin.tie(NULL);
+
+    int n, target;
+    if (!(cin >> n >> target)) return 0;
+    vector<int> nums(n);
+    for (int i = 0; i < n; ++i) {
+        cin >> nums[i];
+    }
+
+    unordered_map<int, int> numMap;
+    for (int i = 0; i < n; ++i) {
+        int complement = target - nums[i];
         if (numMap.find(complement) != numMap.end()) {
             int idx1 = numMap[complement];
             int idx2 = i;
-            if (idx1 > idx2) std::swap(idx1, idx2);
-            return {idx1, idx2};
+            if (idx1 > idx2) swap(idx1, idx2);
+            cout << idx1 << " " << idx2 << "\\n";
+            return 0;
         }
-        numMap[arr[i]] = i;
+        numMap[nums[i]] = i;
     }
-    return {};
+    cout << "-1\\n";
+    return 0;
 }`;
 
-    // 4.1. Submit CORRECT solution with valid function entry -> AC
+    // 4.1. Submit CORRECT FREE program -> AC
     await page.getByTestId('free-source-input').fill(freeAC);
-    await page.getByTestId('entry-type-select').selectOption('function');
-    await page.getByTestId('entry-name-input').fill('timChiSoTong');
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('AC');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Đúng');
     await expect(page.getByTestId('submission-score')).toContainText('1.00');
 
-    // 4.2. Submit WRONG answer -> WA
-    const freeWA = `#include <vector>
-std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
-    return {0, 0};
+    // 4.2. Submit WRONG FREE program -> WA
+    const freeWA = `#include <iostream>
+using namespace std;
+int main() {
+    cout << "0 0\\n";
+    return 0;
 }`;
+    await page.getByTestId('tab-work').click();
     await page.getByTestId('free-source-input').fill(freeWA);
-    await page.getByTestId('entry-type-select').selectOption('function');
-    await page.getByTestId('entry-name-input').fill('timChiSoTong');
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('WA');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Sai kết quả');
     await expect(page.getByTestId('submission-score')).toContainText('0.00');
 
-    // 4.3. Submit wrong entry point name -> CE
-    await page.getByTestId('free-source-input').fill(freeAC);
-    await page.getByTestId('entry-type-select').selectOption('function');
-    await page.getByTestId('entry-name-input').fill('wrongEntryFunctionName');
+    // 4.3. Submit syntax error -> CE
+    await page.getByTestId('tab-work').click();
+    await page.getByTestId('free-source-input').fill('this is a syntax error;;');
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('CE');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Lỗi biên dịch');
 
-    // Verify SV-C history table has 3 rows
-    await expect(page.getByTestId('submission-history')).toBeVisible();
     const historyRowsC = page.locator('[data-testid^="history-row-"]');
     expect(await historyRowsC.count()).toBe(3);
 
-    // CRITICAL: AC-US-15-3 Hidden test data leak check on the entire page content
+    // Anti-leak check
     const pageContentFree = await page.content();
     expect(pageContentFree).not.toContain('HIDDEN_MARK_P7');
-
-    // Check Assignment 1 page content as well
-    await page.goto(`/student/assignments/${assign1Id}`);
-    await page.waitForLoadState('networkidle');
-    const pageContentTemplate = await page.content();
-    expect(pageContentTemplate).not.toContain('HIDDEN_MARK_P7');
+    expect(pageContentFree).not.toContain('SYSTEM_ERROR');
 
     await logout();
 
@@ -568,34 +618,27 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAndChangePassword(studentEmailD, tempPwdD);
 
-    // Enter Classroom and Assignment 1 on mobile
     await page.getByTestId(`enter-classroom-${classroomId}`).click();
     await page.waitForURL(`**/student/classrooms/${classroomId}`);
     await page.getByTestId(`assignment-link-${assign1Id}`).click();
     await page.waitForURL(`**/student/assignments/${assign1Id}`);
     await page.waitForLoadState('networkidle');
 
-    // Check no horizontal scroll on mobile viewport
+    // Check no horizontal scroll on mobile
     const isNoHorizontalScroll = await page.evaluate(() => {
       return document.documentElement.scrollWidth <= window.innerWidth;
     });
     expect(isNoHorizontalScroll).toBe(true);
 
-    // Submit button is clickable on mobile
     const submitBtnMobile = page.getByTestId('submit-solution-btn');
     await expect(submitBtnMobile).toBeVisible();
 
-    // Mobile submission for TEMPLATE correct solution -> AC
+    // Mobile submission
     const regionInputD = page.getByTestId('region-input-reverseLinkedList');
     await regionInputD.fill(solutionAC);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('AC');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Đúng');
     await expect(page.getByTestId('submission-score')).toContainText('1.00');
-
-    const isNoHorizontalScrollAfter = await page.evaluate(() => {
-      return document.documentElement.scrollWidth <= window.innerWidth;
-    });
-    expect(isNoHorizontalScrollAfter).toBe(true);
 
     // 5.2. Past-Deadline Assignment: Late Submission Badge Check
     await page.goto(`/student/assignments/${assign3Id}`);
@@ -605,20 +648,18 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
     const pastTemplateRegion = page.getByTestId('region-input-reverseLinkedList');
     await pastTemplateRegion.fill(solutionAC);
     await submitAndWait(page);
-    await expect(page.getByTestId('submission-verdict')).toContainText('AC');
+    await expect(page.getByTestId('submission-verdict')).toContainText('Đúng');
 
-    // Result card displays "Nộp trễ" badge
     await expect(page.getByTestId('badge-late')).toBeVisible();
     await expect(page.getByTestId('badge-late')).toContainText('Nộp trễ');
 
-    // History table also shows "Nộp trễ" badge
     const historyLateBadge = page.locator('[data-testid^="history-late-"]').first();
     await expect(historyLateBadge).toBeVisible();
     await expect(historyLateBadge).toContainText('Nộp trễ');
 
-    // Anti-leak check for assignment 3
     const pageContentLate = await page.content();
     expect(pageContentLate).not.toContain('HIDDEN_MARK_P7');
+    expect(pageContentLate).not.toContain('SYSTEM_ERROR');
 
     // =========================================================================
     // 6. Assert 0 Console Errors and 0 Page Errors

@@ -81,6 +81,21 @@ export default function TemplateEditor({
     }));
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, name: string) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const current = textarea.value;
+      const updated = current.substring(0, start) + '    ' + current.substring(end);
+      handleRegionChange(name, updated);
+      requestAnimationFrame(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 4;
+      });
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -105,10 +120,8 @@ export default function TemplateEditor({
   return (
     <form onSubmit={handleSubmit} data-testid="template-editor-form">
       <div style={{ marginBottom: '1rem' }}>
-        <h4 style={{ marginBottom: '0.5rem', color: 'var(--neutral-900)' }}>
-          Trình soạn thảo mã nguồn theo khung (Template Mode)
-        </h4>
-        <p style={{ fontSize: '0.875rem', color: 'var(--neutral-600)' }}>
+        <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-main)' }}>Mã nguồn bài làm</h4>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
           Các phần code cố định được khóa chỉ đọc. Bạn chỉ có thể chỉnh sửa bên trong các vùng được
           mở.
         </p>
@@ -184,9 +197,10 @@ export default function TemplateEditor({
                 data-testid={`region-input-${regionName}`}
                 value={regions[regionName] ?? ''}
                 onChange={(e) => handleRegionChange(regionName, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, regionName)}
                 style={{
                   minHeight: '160px',
-                  fontFamily: "'Courier New', Courier, monospace",
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
                   fontSize: '0.875rem',
                   lineHeight: '1.4',
                 }}

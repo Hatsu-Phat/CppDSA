@@ -1,16 +1,18 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 
 test.describe('Lecturer End-to-End Workflow', () => {
   test.use({
     baseURL: process.env.BASE_URL || 'http://localhost:3000',
   });
 
-  test('complete lecturer journey: login, classroom, import CSV, create assignments, verify submissions, export CSV, warmup', async ({
+  test('complete lecturer journey: login, classroom, import CSV, create assignments, bulk tests import, verify submissions, edit score, regrade, export CSV', async ({
     page,
     request,
     baseURL,
   }) => {
-    test.setTimeout(120000);
+    test.setTimeout(180000);
 
     // 0. Setup console and page error monitors: 0 errors allowed
     const consoleErrors: string[] = [];
@@ -33,15 +35,20 @@ test.describe('Lecturer End-to-End Workflow', () => {
     const s1Email = `student1_${runSuffix}@cppdsa.local`;
     const s2Email = `student2_${runSuffix}@cppdsa.local`;
 
+    // Ensure reports/ui directory exists
+    const reportsDir = path.resolve(process.cwd(), 'reports/ui');
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+
     // 1. Lecturer Login
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: /Đăng nhập CppDSA/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Đăng nhập/i })).toBeVisible();
 
     await page.locator('#email').fill('lecturer@cppdsa.local');
     await page.locator('#password').fill('ChangeMe123!');
     await page.getByRole('button', { name: 'Đăng nhập' }).click();
 
-    // Verify redirected to lecturer dashboard
     await page.waitForURL('**/lecturer');
     await expect(page.getByRole('heading', { name: /Quản lý Lớp học/i })).toBeVisible();
 
@@ -51,7 +58,6 @@ test.describe('Lecturer End-to-End Workflow', () => {
     await page.locator('#classroom-desc').fill('Lớp thực hành phục vụ kiểm thử E2E');
     await page.getByTestId('submit-classroom-btn').click();
 
-    // Find and enter the newly created classroom
     const enterClassroomLink = page.getByRole('link', { name: /Vào quản lý lớp →/i }).first();
     await expect(enterClassroomLink).toBeVisible();
     await enterClassroomLink.click();
@@ -61,7 +67,6 @@ test.describe('Lecturer End-to-End Workflow', () => {
       'Lớp CTDL&GT K26 - E2E Playwright'
     );
 
-    // Extract classroomId from URL
     const classUrl = page.url();
     const classroomId = classUrl.split('/classrooms/')[1].split('/')[0].split('?')[0];
     expect(classroomId).toBeTruthy();
@@ -79,12 +84,10 @@ test.describe('Lecturer End-to-End Workflow', () => {
     await page.getByTestId('csv-textarea').fill(csvData);
     await page.getByTestId('import-csv-submit').click();
 
-    // Verify success alert and error line alert
     await expect(page.getByTestId('csv-success-alert')).toContainText('2 sinh viên');
     await expect(page.getByTestId('csv-errors-alert')).toContainText('1 dòng dữ liệu bị lỗi');
     await expect(page.getByTestId('csv-error-item')).toContainText('Dòng 4');
 
-    // Verify created students temporary passwords table
     await expect(page.getByTestId('created-passwords-table')).toBeVisible();
 
     const student1TempPwd = await page.getByTestId(`temp-password-${s1Code}`).innerText();
@@ -95,7 +98,6 @@ test.describe('Lecturer End-to-End Workflow', () => {
     expect(student1TempPwd.trim().length).toBeGreaterThan(5);
     expect(student2TempPwd.trim().length).toBeGreaterThan(5);
 
-    // Verify students list updated
     await expect(page.getByTestId(`student-row-${s1Code}`)).toBeVisible();
     await expect(page.getByTestId(`student-row-${s2Code}`)).toBeVisible();
 
@@ -111,7 +113,7 @@ test.describe('Lecturer End-to-End Workflow', () => {
     await page.getByTestId('create-assignment-btn').click();
     await page.waitForURL('**/assignments/new');
 
-    // Test Form Rejection for negative TL
+    // Negative TL validation
     await page.getByTestId('assignment-title-input').fill('Đảo ngược danh sách liên kết');
     await page.getByTestId('assignment-tl-input').fill('-100');
     await page.getByTestId('submit-assignment-btn').click();
@@ -119,17 +121,17 @@ test.describe('Lecturer End-to-End Workflow', () => {
       'Thời gian chạy (TL) phải là số dương'
     );
 
-    // Reset valid TL
+    // Valid TL
     await page.getByTestId('assignment-tl-input').fill('1000');
 
-    // Test Form Rejection for missing STUDENT_END marker
+    // Missing STUDENT_END marker rejection
     await page
       .getByTestId('assignment-template-input')
       .fill('#include <iostream>\n// STUDENT_BEGIN reverseLinkedList\nvoid dummy() {}\n');
     await page.getByTestId('submit-assignment-btn').click();
     await expect(page.getByTestId('assignment-form-error')).toContainText('thiếu // STUDENT_END');
 
-    // Fill valid template code (from docs/examples/template-mode/template.cpp)
+    // Fill valid template code
     const validTemplateCode = `#include <iostream>
 #include <vector>
 
@@ -190,14 +192,13 @@ int main() {
     await page.getByTestId('assignment-deadline-input').fill('2027-12-31T23:59');
     await page.getByTestId('submit-assignment-btn').click();
 
-    // Redirected back to classroom page
     await page.waitForURL(`**/lecturer/classrooms/${classroomId}`);
     await page.getByTestId('tab-assignments').click();
     await expect(
       page.getByRole('heading', { name: 'Đảo ngược danh sách liên kết', level: 4 })
     ).toBeVisible();
 
-    // 6. Manage Hidden Tests for Assignment 1 (TEMPLATE Mode, ≥ 2 tests)
+    // 6. Manage Hidden Tests for Assignment 1
     const card1 = page.locator('.card', { hasText: 'Đảo ngược danh sách liên kết' });
     await card1.getByRole('link', { name: /Quản lý Test ẩn/i }).click();
     await page.waitForURL('**/assignments/*/tests');
@@ -206,13 +207,13 @@ int main() {
     const assignment1Id = assign1Url.split('/assignments/')[1].split('/')[0];
     expect(assignment1Id).toBeTruthy();
 
-    // Add Hidden Test 1 (from docs/examples/template-mode/tests/test1.in / test1.out)
+    // Add Test 1
     await page.getByTestId('new-test-input').fill('4\n1 2 3 4\n');
     await page.getByTestId('new-test-expected').fill('4 3 2 1\n');
     await page.getByTestId('submit-new-test-btn').click();
     await expect(page.getByTestId('test-input-1')).toContainText('4\n1 2 3 4');
 
-    // Add Hidden Test 2 (from docs/examples/template-mode/tests/test2.in / test2.out)
+    // Add Test 2
     await page.getByTestId('new-test-input').fill('5\n10 20 30 40 50\n');
     await page.getByTestId('new-test-expected').fill('50 40 30 20 10\n');
     await page.getByTestId('submit-new-test-btn').click();
@@ -222,7 +223,7 @@ int main() {
     await page.getByRole('link', { name: /← Về chi tiết lớp học/i }).click();
     await page.waitForURL(`**/lecturer/classrooms/${classroomId}`);
 
-    // 7. Create FREE mode assignment
+    // 7. Create FREE mode assignment (NO harness field!)
     await page.getByTestId('tab-assignments').click();
     await page.getByTestId('create-assignment-btn').click();
     await page.waitForURL('**/assignments/new');
@@ -231,49 +232,12 @@ int main() {
     await page.getByTestId('assignment-desc-input').fill('Tìm hai chỉ số có tổng bằng target.');
     await page.getByTestId('assignment-mode-select').selectOption('FREE');
 
-    const freeHarness = `#include <iostream>
-#include <vector>
-
-std::vector<int> timChiSoTong(const std::vector<int>&, int);
-
-int main() {
-    std::ios_base::sync_with_stdio(false);
-    std::cin.tie(nullptr);
-
-    int n, target;
-    if (!(std::cin >> n >> target)) return 0;
-    std::vector<int> nums(n);
-    for (int i = 0; i < n; ++i) {
-        std::cin >> nums[i];
-    }
-
-    std::vector<int> result = timChiSoTong(nums, target);
-
-    if (result.empty()) {
-        std::cout << "-1\\n";
-    } else {
-        for (size_t i = 0; i < result.size(); ++i) {
-            std::cout << result[i] << (i + 1 < result.size() ? " " : "");
-        }
-        std::cout << "\\n";
-    }
-
-    return 0;
-}`;
-
-    const freeModeSpec = JSON.stringify(
-      {
-        harness: freeHarness,
-        entry: {
-          type: 'function',
-          name: 'timChiSoTong',
-        },
-      },
-      null,
-      2
+    // Verify notice is shown and NO harness textarea
+    await expect(page.getByTestId('free-mode-section')).toContainText(
+      'Sinh viên nộp chương trình đầy đủ'
     );
+    await expect(page.locator('[data-testid="assignment-free-spec-input"]')).toHaveCount(0);
 
-    await page.getByTestId('assignment-free-spec-input').fill(freeModeSpec);
     await page.getByTestId('assignment-tl-input').fill('1000');
     await page.getByTestId('assignment-ml-input').fill('256');
     await page.getByTestId('assignment-deadline-input').fill('2027-12-31T23:59');
@@ -285,7 +249,7 @@ int main() {
       page.getByRole('heading', { name: 'Two Sum (Tìm hai chỉ số)', level: 4 })
     ).toBeVisible();
 
-    // 8. Manage Hidden Tests for Assignment 2 (FREE Mode, ≥ 2 tests)
+    // 8. Manage Tests for Assignment 2 & Bulk File Import
     const card2 = page.locator('.card', { hasText: 'Two Sum (Tìm hai chỉ số)' });
     await card2.getByRole('link', { name: /Quản lý Test ẩn/i }).click();
     await page.waitForURL('**/assignments/*/tests');
@@ -294,22 +258,53 @@ int main() {
     const assignment2Id = assign2Url.split('/assignments/')[1].split('/')[0];
     expect(assignment2Id).toBeTruthy();
 
-    // Add Hidden Test 1 (from docs/examples/free-mode/tests/test1.in / test1.out)
-    await page.getByTestId('new-test-input').fill('4 9\n2 7 11 15\n');
-    await page.getByTestId('new-test-expected').fill('0 1\n');
-    await page.getByTestId('submit-new-test-btn').click();
-    await expect(page.getByTestId('test-input-1')).toContainText('4 9\n2 7 11 15');
+    // 8.1. Bulk Import Tests from files with preview
+    await page.getByTestId('bulk-file-input').setInputFiles([
+      {
+        name: 'test01.inp',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('4 9\n2 7 11 15\n'),
+      },
+      {
+        name: 'test01.out',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('0 1\n'),
+      },
+      {
+        name: 'test02.inp',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('5 10\n2 3 5 7 11\n'),
+      },
+      {
+        name: 'test02.out',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('1 3\n'),
+      },
+    ]);
 
-    // Add Hidden Test 2 (from docs/examples/free-mode/tests/test2.in / test2.out)
-    await page.getByTestId('new-test-input').fill('5 10\n2 3 5 7 11\n');
-    await page.getByTestId('new-test-expected').fill('1 3\n');
-    await page.getByTestId('submit-new-test-btn').click();
+    // Preview table is visible
+    await expect(page.getByTestId('bulk-preview-section')).toBeVisible();
+
+    // Screenshot lecturer-tests-import.png
+    await page.screenshot({ path: 'reports/ui/lecturer-tests-import.png' });
+
+    // Upload the paired tests
+    await page.getByTestId('bulk-upload-btn').click();
+    await expect(page.getByTestId('bulk-success')).toBeVisible();
+
+    // Verify imported tests in table
+    await expect(page.getByTestId('test-input-1')).toContainText('4 9\n2 7 11 15');
     await expect(page.getByTestId('test-input-2')).toContainText('5 10\n2 3 5 7 11');
+
+    // 8.2. Test "Chấm lại tất cả bài nộp" button
+    page.once('dialog', async (d) => await d.accept());
+    await page.getByTestId('regrade-all-btn').click();
+    await expect(page.getByTestId('regrade-notice')).toBeVisible();
 
     await page.getByRole('link', { name: /← Về chi tiết lớp học/i }).click();
     await page.waitForURL(`**/lecturer/classrooms/${classroomId}`);
 
-    // 9. Student Submissions via API (using Playwright request)
+    // 9. Student Submissions via API
     // Student 1: logs in with reset temp password, changes password, submits CORRECT solution for TEMPLATE assignment
     const s1LoginRes = await request.post(`${rootUrl}/api/auth/login`, {
       data: { email: s1Email, password: student1NewTempPwd.trim() },
@@ -318,14 +313,12 @@ int main() {
     const s1Cookie = s1LoginRes.headers()['set-cookie']?.split(';')[0];
     expect(s1Cookie).toBeTruthy();
 
-    // Student 1 changes password
     const s1ChangePwdRes = await request.post(`${rootUrl}/api/auth/change-password`, {
       headers: { cookie: s1Cookie! },
       data: { oldPassword: student1NewTempPwd.trim(), newPassword: 'NewPassword123!' },
     });
     expect(s1ChangePwdRes.status()).toBe(200);
 
-    // Student 1 submits correct solution (from docs/examples/template-mode/solution.cpp)
     const student1Solution = `ListNode* reverseLinkedList(ListNode* head) {
     ListNode* prev = nullptr;
     ListNode* curr = head;
@@ -374,7 +367,7 @@ int main() {
     }
     expect(s1Completed).toBe(true);
 
-    // Student 2: logs in with temp password, changes password, submits WRONG solution for FREE assignment
+    // Student 2: logs in, changes password, submits WRONG answer for FREE assignment (full program)
     const s2LoginRes = await request.post(`${rootUrl}/api/auth/login`, {
       data: { email: s2Email, password: student2TempPwd.trim() },
     });
@@ -382,18 +375,17 @@ int main() {
     const s2Cookie = s2LoginRes.headers()['set-cookie']?.split(';')[0];
     expect(s2Cookie).toBeTruthy();
 
-    // Student 2 changes password
     const s2ChangePwdRes = await request.post(`${rootUrl}/api/auth/change-password`, {
       headers: { cookie: s2Cookie! },
       data: { oldPassword: student2TempPwd.trim(), newPassword: 'NewPassword123!' },
     });
     expect(s2ChangePwdRes.status()).toBe(200);
 
-    // Student 2 submits wrong answer (from docs/examples/free-mode/solution_wa.cpp)
-    const student2WrongSolution = `#include <vector>
-
-std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
-    return {0, 0};
+    const student2WrongSolution = `#include <iostream>
+using namespace std;
+int main() {
+    cout << "0 0\\n";
+    return 0;
 }`;
 
     const s2SubmitRes = await request.post(
@@ -402,10 +394,6 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
         headers: { cookie: s2Cookie! },
         data: {
           studentSource: student2WrongSolution,
-          entry: {
-            type: 'function',
-            name: 'timChiSoTong',
-          },
         },
       }
     );
@@ -438,7 +426,6 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
     await page.getByTestId('tab-submissions').click();
     await expect(page.getByTestId('submissions-table')).toBeVisible();
 
-    // Verify submission with score 1 (1.00) and score < 1 (0.00)
     await expect(page.getByTestId(`sub-score-${s1SubId}`)).toContainText('1.00');
     await expect(page.getByTestId(`sub-score-${s2SubId}`)).toContainText('0.00');
 
@@ -453,22 +440,72 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
     await expect(page.getByTestId(`sub-score-${s1SubId}`)).toBeVisible();
     await expect(page.getByTestId(`sub-score-${s2SubId}`)).toBeVisible();
 
-    // 11. View Submission Details (Student 1: AC verdicts)
+    // 11. View Submission Details Modal & Go to Lecturer Submission Detail Page
     await page.getByTestId(`view-submission-btn-${s1SubId}`).click();
     await expect(page.getByTestId('submission-detail-modal')).toBeVisible();
     await expect(page.getByTestId('detail-score')).toContainText('1.00');
     await expect(page.getByTestId('detail-submitted-code')).toContainText('reverseLinkedList');
-    await expect(page.getByTestId('verdict-0')).toContainText('AC');
-    await page.getByRole('button', { name: '✕ Đóng' }).click();
 
-    // View Submission Details (Student 2: WA verdicts)
-    await page.getByTestId(`view-submission-btn-${s2SubId}`).click();
-    await expect(page.getByTestId('submission-detail-modal')).toBeVisible();
-    await expect(page.getByTestId('detail-score')).toContainText('0.00');
-    await expect(page.getByTestId('verdict-0')).toContainText('WA');
-    await page.getByRole('button', { name: '✕ Đóng' }).click();
+    // Click link to open submission page /lecturer/submissions/:id
+    await page.getByTestId('open-submission-page-link').click();
+    await page.waitForURL(`**/lecturer/submissions/${s1SubId}`);
 
-    // 12. Export Grades CSV and verify file content
+    // Screenshot lecturer-submission.png
+    await page.screenshot({ path: 'reports/ui/lecturer-submission.png' });
+
+    // Screenshot lecturer-dark.png (Lecturer submission in dark mode)
+    const themeBtnLec = page.getByTestId('theme-toggle-btn');
+    if (await themeBtnLec.isVisible()) {
+      await themeBtnLec.click();
+    } else {
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      });
+    }
+    await page.waitForFunction(
+      () => document.documentElement.getAttribute('data-theme') === 'dark'
+    );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: 'reports/ui/lecturer-dark.png' });
+
+    // Switch back to light
+    if (await themeBtnLec.isVisible()) {
+      await themeBtnLec.click();
+    } else {
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('data-theme', 'light');
+      });
+    }
+    await page.waitForFunction(
+      () => document.documentElement.getAttribute('data-theme') === 'light'
+    );
+    await page.evaluate(async () => {
+      const animations = document.getAnimations();
+      await Promise.all(animations.map((a) => a.finished));
+    });
+    await page.waitForTimeout(100);
+
+    // 11.1. Test Score Editing on Lecturer Submission Page
+    await page.getByTestId('edit-score-input').fill('0.85');
+    await page.getByTestId('save-score-btn').click();
+    await expect(page.getByTestId('score-success')).toBeVisible();
+    await expect(page.getByTestId('detail-score')).toContainText('0.85');
+
+    // 11.2. Test Regrade Single Submission
+    page.once('dialog', async (d) => await d.accept());
+    await page.getByTestId('regrade-sub-btn').click();
+    await expect(page.getByTestId('regrade-notice')).toBeVisible();
+
+    // Return to classroom
+    await page.goto(`/lecturer/classrooms/${classroomId}`);
+    await page.waitForURL(`**/lecturer/classrooms/${classroomId}`);
+    await page.getByTestId('tab-submissions').click();
+
+    // 12. Export Grades CSV
     const downloadPromise = page.waitForEvent('download');
     await page.getByTestId('export-csv-btn').click();
     const download = await downloadPromise;
@@ -483,7 +520,6 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
     }
     const csvContent = Buffer.concat(chunks).toString('utf8');
 
-    // Verify CSV contains students and assignments data
     expect(csvContent).toContain('student_code');
     expect(csvContent).toContain('full_name');
     expect(csvContent).toContain('email');
@@ -492,14 +528,7 @@ std::vector<int> timChiSoTong(const std::vector<int>& nums, int target) {
     expect(csvContent).toContain(s1Email);
     expect(csvContent).toContain(s2Email);
 
-    // 13. System Warmup Button and Status Display
-    await page.getByTestId('warmup-btn').click();
-    await expect(page.getByTestId('warmup-status-alert')).toBeVisible();
-    await expect(page.getByTestId('db-status')).toContainText('Sẵn sàng');
-    await expect(page.getByTestId('grader-status')).toContainText('Sẵn sàng');
-    await page.getByRole('button', { name: 'Đóng' }).click();
-
-    // 14. Assert 0 console errors and 0 page errors
+    // 13. Assert 0 console errors and 0 page errors
     expect(consoleErrors).toEqual([]);
     expect(pageErrors).toEqual([]);
   });

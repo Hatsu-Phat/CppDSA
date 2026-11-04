@@ -1,7 +1,12 @@
 'use client';
 
 import React from 'react';
-import { SubmissionData } from './SubmissionResultCard';
+import {
+  SubmissionData,
+  getVerdictBadgeClass,
+  getVerdictLabel,
+  computeOverallVerdict,
+} from './SubmissionResultCard';
 
 export interface SubmissionHistoryTableProps {
   submissions: SubmissionData[];
@@ -18,7 +23,7 @@ export default function SubmissionHistoryTable({
     return (
       <div
         className="card"
-        style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--neutral-600)' }}
+        style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}
         data-testid="no-submissions-msg"
       >
         Bạn chưa nộp bài lần nào cho bài tập này.
@@ -28,7 +33,7 @@ export default function SubmissionHistoryTable({
 
   return (
     <div className="card" data-testid="submission-history">
-      <h4 style={{ marginBottom: '1rem', color: 'var(--neutral-900)' }}>
+      <h4 style={{ marginBottom: '1rem', color: 'var(--text-main)', fontSize: '1.1rem' }}>
         Lịch sử nộp bài ({submissions.length} lần)
       </h4>
 
@@ -36,22 +41,25 @@ export default function SubmissionHistoryTable({
         <table className="table" data-testid="history-table">
           <thead>
             <tr>
+              <th style={{ width: '60px' }}>Lần</th>
               <th>Thời gian nộp</th>
-              <th>Trạng thái</th>
+              <th>Trạng thái / Kết quả</th>
               <th>Điểm số</th>
               <th>Số test đạt</th>
               <th>Ghi chú</th>
-              <th>Thao tác</th>
+              <th style={{ textAlign: 'right' }}>Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            {submissions.map((sub) => {
+            {submissions.map((sub, idx) => {
+              const attemptNumber = submissions.length - idx;
               const formattedDate = sub.createdAt
                 ? new Date(sub.createdAt).toLocaleString('vi-VN')
-                : '-';
+                : '—';
               const formattedScore =
-                sub.score !== null && sub.score !== undefined ? Number(sub.score).toFixed(2) : '-';
+                sub.score !== null && sub.score !== undefined ? Number(sub.score).toFixed(2) : '—';
               const isSelected = selectedSubmissionId === sub.id;
+              const overallVerdict = computeOverallVerdict(sub);
 
               return (
                 <tr
@@ -59,29 +67,35 @@ export default function SubmissionHistoryTable({
                   data-testid={`history-row-${sub.id}`}
                   style={{
                     backgroundColor: isSelected ? 'var(--primary-light)' : 'transparent',
+                    cursor: onSelectSubmission ? 'pointer' : 'default',
                   }}
+                  onClick={() => onSelectSubmission?.(sub.id)}
                 >
+                  <td style={{ fontWeight: 600 }}>#{attemptNumber}</td>
                   <td style={{ fontSize: '0.85rem' }}>{formattedDate}</td>
                   <td>
-                    <span
-                      className={`badge ${
-                        sub.status === 'COMPLETED'
-                          ? 'badge-completed'
-                          : sub.status === 'SYSTEM_ERROR'
-                            ? 'badge-wa'
-                            : 'badge-pending'
-                      }`}
-                    >
-                      {sub.status}
-                    </span>
+                    {sub.status === 'COMPLETED' ? (
+                      <span className={`badge ${getVerdictBadgeClass(overallVerdict)}`}>
+                        {getVerdictLabel(overallVerdict)}
+                      </span>
+                    ) : sub.status === 'SYSTEM_ERROR' ? (
+                      <span className="badge badge-wa">Lỗi hệ thống</span>
+                    ) : (
+                      <span className="badge badge-pending">
+                        {sub.status === 'RUNNING' ? 'Đang chấm bài...' : 'Đang chờ chấm...'}
+                      </span>
+                    )}
                   </td>
-                  <td style={{ fontWeight: 600 }} data-testid={`history-score-${sub.id}`}>
+                  <td
+                    style={{ fontWeight: 600, color: 'var(--primary)' }}
+                    data-testid={`history-score-${sub.id}`}
+                  >
                     {formattedScore}
                   </td>
                   <td>
                     {sub.passedTests !== undefined && sub.totalTests !== undefined
                       ? `${sub.passedTests} / ${sub.totalTests}`
-                      : '-'}
+                      : '—'}
                   </td>
                   <td>
                     {sub.isLate && (
@@ -90,14 +104,17 @@ export default function SubmissionHistoryTable({
                       </span>
                     )}
                   </td>
-                  <td>
+                  <td style={{ textAlign: 'right' }}>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={() => onSelectSubmission?.(sub.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectSubmission?.(sub.id);
+                      }}
                       data-testid={`view-submission-${sub.id}`}
                     >
-                      Xem kết quả
+                      Xem chi tiết
                     </button>
                   </td>
                 </tr>

@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import CsvImportForm from '@/components/CsvImportForm';
+import { getVerdictLabel, getVerdictBadgeClass } from '@/components/SubmissionResultCard';
 
 interface Classroom {
   id: string;
@@ -836,18 +837,47 @@ export default function ClassroomDetailPage() {
               <h3 style={{ color: 'var(--primary)' }}>
                 Chi tiết bài nộp #{selectedSubDetail.id.slice(0, 8)}
               </h3>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setSelectedSubDetail(null)}
-              >
-                ✕ Đóng
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <Link
+                  href={`/lecturer/submissions/${selectedSubDetail.id}`}
+                  className="btn btn-secondary btn-sm"
+                  data-testid="open-submission-page-link"
+                >
+                  Sửa điểm & Chấm lại →
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setSelectedSubDetail(null)}
+                >
+                  ✕ Đóng
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
               <div>
-                <strong>Trạng thái:</strong> {selectedSubDetail.status}
+                <strong>Trạng thái:</strong>{' '}
+                <span
+                  className={`badge ${
+                    selectedSubDetail.status === 'COMPLETED'
+                      ? 'badge-ac'
+                      : selectedSubDetail.status === 'SYSTEM_ERROR'
+                        ? 'badge-wa'
+                        : 'badge-pending'
+                  }`}
+                  data-testid="detail-status"
+                >
+                  {selectedSubDetail.status === 'COMPLETED'
+                    ? 'Đã chấm xong'
+                    : selectedSubDetail.status === 'SYSTEM_ERROR'
+                      ? 'Lỗi hệ thống'
+                      : selectedSubDetail.status === 'RUNNING'
+                        ? 'Đang chấm bài'
+                        : selectedSubDetail.status === 'PENDING'
+                          ? 'Đang chờ chấm'
+                          : selectedSubDetail.status}
+                </span>
               </div>
               <div>
                 <strong>Điểm số:</strong>{' '}
@@ -889,9 +919,51 @@ export default function ClassroomDetailPage() {
               >
                 Mã nguồn sinh viên đã nộp:
               </h4>
-              <pre className="code-box" data-testid="detail-submitted-code">
-                {selectedSubDetail.submittedCode}
-              </pre>
+              {(() => {
+                const codeStr = selectedSubDetail.submittedCode;
+                try {
+                  const trimmed = codeStr.trim();
+                  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                    const parsed = JSON.parse(trimmed);
+                    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                      const entries = Object.entries(parsed);
+                      if (entries.length > 0) {
+                        return (
+                          <div
+                            data-testid="detail-submitted-code"
+                            style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+                          >
+                            {entries.map(([regionName, content]) => (
+                              <div key={regionName}>
+                                <div
+                                  style={{
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: 'var(--text-muted)',
+                                    marginBottom: '0.25rem',
+                                  }}
+                                >
+                                  Vùng mã: <code>{regionName}</code>
+                                </div>
+                                <pre className="code-box" style={{ margin: 0 }}>
+                                  <code>{String(content)}</code>
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                    }
+                  }
+                } catch {
+                  // Fallback
+                }
+                return (
+                  <pre className="code-box" data-testid="detail-submitted-code">
+                    <code>{codeStr}</code>
+                  </pre>
+                );
+              })()}
             </div>
 
             <div>
@@ -918,18 +990,10 @@ export default function ClassroomDetailPage() {
                       </td>
                       <td>
                         <span
-                          className={`badge ${
-                            t.verdict === 'AC'
-                              ? 'badge-ac'
-                              : t.verdict === 'WA'
-                                ? 'badge-wa'
-                                : t.verdict === 'TLE'
-                                  ? 'badge-tle'
-                                  : 'badge-ce'
-                          }`}
+                          className={`badge ${getVerdictBadgeClass(t.verdict)}`}
                           data-testid={`verdict-${idx}`}
                         >
-                          {t.verdict}
+                          {getVerdictLabel(t.verdict)}
                         </span>
                       </td>
                       <td>{t.executionTimeMs} ms</td>

@@ -103,14 +103,6 @@ export default function AssignmentForm({
       : '2026-12-31T23:59'
   );
   const [templateCode, setTemplateCode] = useState(initialData?.templateCode || '');
-  const [entryPointSpecText, setEntryPointSpecText] = useState(
-    initialData?.entryPointSpec
-      ? typeof initialData.entryPointSpec === 'string'
-        ? initialData.entryPointSpec
-        : JSON.stringify(initialData.entryPointSpec, null, 2)
-      : ''
-  );
-
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -141,23 +133,10 @@ export default function AssignmentForm({
       return;
     }
 
-    let parsedEntryPointSpec: any = null;
     if (mode === 'TEMPLATE') {
       const markerResult = validateClientTemplate(templateCode);
       if (!markerResult.valid) {
         setFormError(markerResult.error || 'Cấu trúc marker template không hợp lệ');
-        return;
-      }
-    } else {
-      // FREE mode
-      if (!entryPointSpecText.trim()) {
-        setFormError('Đặc tả giao diện / Harness (JSON) là bắt buộc đối với mode FREE');
-        return;
-      }
-      try {
-        parsedEntryPointSpec = JSON.parse(entryPointSpecText);
-      } catch {
-        setFormError('Đặc tả giao diện / Harness phải là định dạng JSON hợp lệ');
         return;
       }
     }
@@ -170,7 +149,6 @@ export default function AssignmentForm({
       memoryLimitMb: ml,
       deadline: new Date(deadline).toISOString(),
       templateCode: mode === 'TEMPLATE' ? templateCode : undefined,
-      entryPointSpec: mode === 'FREE' ? parsedEntryPointSpec : undefined,
     };
 
     setSubmitting(true);
@@ -342,23 +320,11 @@ export default function AssignmentForm({
             />
           </div>
         ) : (
-          <div className="form-group" data-testid="free-mode-section">
-            <label className="form-label" htmlFor="assignment-entry-spec">
-              Đặc tả giao diện / Harness chấm (JSON) *
-            </label>
-            <p style={{ fontSize: '0.8rem', color: 'var(--neutral-600)', marginBottom: '0.25rem' }}>
-              JSON chứa <code>harness</code> (mã wrapper C++) và <code>entry</code> (type và name
-              hàm/method).
+          <div className="alert alert-info" data-testid="free-mode-section">
+            <p style={{ margin: 0 }}>
+              Sinh viên nộp chương trình đầy đủ (có <code>main</code>); hệ thống chấm bằng so sánh
+              output.
             </p>
-            <textarea
-              id="assignment-entry-spec"
-              className="form-control"
-              rows={12}
-              value={entryPointSpecText}
-              onChange={(e) => setEntryPointSpecText(e.target.value)}
-              placeholder='{&#10;  "harness": "#include <iostream>\n...",&#10;  "entry": { "type": "function", "name": "timChiSoTong" }&#10;}'
-              data-testid="assignment-free-spec-input"
-            />
           </div>
         )}
 

@@ -6,7 +6,7 @@ import FreeModeEditor from '../components/FreeModeEditor';
 describe('FreeModeEditor Component', () => {
   it('validates and rejects empty source code', () => {
     const handleSubmit = vi.fn();
-    render(<FreeModeEditor onSubmit={handleSubmit} />);
+    render(<FreeModeEditor initialSource="" onSubmit={handleSubmit} />);
 
     const submitBtn = screen.getByTestId('submit-solution-btn');
     fireEvent.click(submitBtn);
@@ -16,110 +16,72 @@ describe('FreeModeEditor Component', () => {
     expect(errorAlert.textContent).toContain('Mã nguồn sinh viên không được để trống');
   });
 
-  it('validates and rejects empty or invalid entry point name', () => {
+  it('submits valid payload with studentSource', () => {
     const handleSubmit = vi.fn();
-    render(
-      <FreeModeEditor
-        initialSource="int solve() { return 42; }"
-        initialEntry={{ type: 'function', name: '' }}
-        onSubmit={handleSubmit}
-      />
-    );
-
-    const submitBtn = screen.getByTestId('submit-solution-btn');
-    fireEvent.click(submitBtn);
-
-    expect(handleSubmit).not.toHaveBeenCalled();
-    const errorAlert = screen.getByTestId('free-mode-editor-error');
-    expect(errorAlert.textContent).toContain('Thiếu tên điểm vào');
-  });
-
-  it('validates and rejects invalid C++ keyword as entry point name', () => {
-    const handleSubmit = vi.fn();
-    render(
-      <FreeModeEditor
-        initialSource="int solve() { return 42; }"
-        initialEntry={{ type: 'function', name: 'class' }}
-        onSubmit={handleSubmit}
-      />
-    );
-
-    const submitBtn = screen.getByTestId('submit-solution-btn');
-    fireEvent.click(submitBtn);
-
-    expect(handleSubmit).not.toHaveBeenCalled();
-    const errorAlert = screen.getByTestId('free-mode-editor-error');
-    expect(errorAlert.textContent).toContain(
-      'không phải là định danh C++ hợp lệ hoặc trùng từ khóa'
-    );
-  });
-
-  it('validates and rejects method type when className is missing', () => {
-    const handleSubmit = vi.fn();
-    render(
-      <FreeModeEditor
-        initialSource="class Solution { public: int solve() { return 42; } };"
-        initialEntry={{ type: 'method', name: 'solve', className: '' }}
-        onSubmit={handleSubmit}
-      />
-    );
-
-    const submitBtn = screen.getByTestId('submit-solution-btn');
-    fireEvent.click(submitBtn);
-
-    expect(handleSubmit).not.toHaveBeenCalled();
-    const errorAlert = screen.getByTestId('free-mode-editor-error');
-    expect(errorAlert.textContent).toContain('Phương thức (method) yêu cầu khai báo tên lớp');
-  });
-
-  it('submits valid payload matching openapi.yaml schema for function entry', () => {
-    const handleSubmit = vi.fn();
-    render(
-      <FreeModeEditor
-        initialSource="int timChiSoTong() { return 1; }"
-        initialEntry={{ type: 'function', name: 'timChiSoTong' }}
-        onSubmit={handleSubmit}
-      />
-    );
+    const source = '#include <iostream>\nint main() { return 0; }';
+    render(<FreeModeEditor initialSource={source} onSubmit={handleSubmit} />);
 
     const submitBtn = screen.getByTestId('submit-solution-btn');
     fireEvent.click(submitBtn);
 
     expect(handleSubmit).toHaveBeenCalledTimes(1);
-    const payload = handleSubmit.mock.calls[0][0];
-
-    expect(payload).toEqual({
-      studentSource: 'int timChiSoTong() { return 1; }',
-      entry: {
-        type: 'function',
-        name: 'timChiSoTong',
-      },
+    expect(handleSubmit).toHaveBeenCalledWith({
+      studentSource: source,
     });
   });
 
-  it('submits valid payload matching openapi.yaml schema for method entry with className', () => {
+  it('inserts 4 spaces when Tab key is pressed', () => {
     const handleSubmit = vi.fn();
-    render(
-      <FreeModeEditor
-        initialSource="class Solution { public: int timTong() { return 1; } };"
-        initialEntry={{ type: 'method', name: 'timTong', className: 'Solution' }}
-        onSubmit={handleSubmit}
-      />
-    );
+    render(<FreeModeEditor initialSource="int main() {}" onSubmit={handleSubmit} />);
+
+    const textarea = screen.getByTestId('free-source-input') as HTMLTextAreaElement;
+    textarea.selectionStart = 0;
+    textarea.selectionEnd = 0;
+
+    fireEvent.keyDown(textarea, { key: 'Tab' });
+    expect(textarea.value.startsWith('    ')).toBe(true);
+  });
+
+  it('renders default template with bits/stdc++.h when initialSource is omitted', () => {
+    const handleSubmit = vi.fn();
+    render(<FreeModeEditor onSubmit={handleSubmit} />);
+
+    const textarea = screen.getByTestId('free-source-input') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('#include <bits/stdc++.h>');
+    expect(textarea.value).toContain('using namespace std;');
+    expect(textarea.value).toContain('int main()');
+  });
+
+  it('rejects source code exceeding 64 KB limit', () => {
+    const handleSubmit = vi.fn();
+    const largeSource = 'a'.repeat(65537);
+    render(<FreeModeEditor initialSource={largeSource} onSubmit={handleSubmit} />);
 
     const submitBtn = screen.getByTestId('submit-solution-btn');
     fireEvent.click(submitBtn);
 
-    expect(handleSubmit).toHaveBeenCalledTimes(1);
-    const payload = handleSubmit.mock.calls[0][0];
+    expect(handleSubmit).not.toHaveBeenCalled();
+    const errorAlert = screen.getByTestId('free-mode-editor-error');
+    expect(errorAlert.textContent).toContain('vượt quá dung lượng tối đa 64 KB');
+  });
 
-    expect(payload).toEqual({
-      studentSource: 'class Solution { public: int timTong() { return 1; } };',
-      entry: {
-        type: 'method',
-        name: 'timTong',
-        className: 'Solution',
-      },
-    });
+  it('disables submit button and shows loading text when submitting', () => {
+    const handleSubmit = vi.fn();
+    render(
+      <FreeModeEditor initialSource="int main() {}" onSubmit={handleSubmit} submitting={true} />
+    );
+
+    const submitBtn = screen.getByTestId('submit-solution-btn') as HTMLButtonElement;
+    expect(submitBtn.disabled).toBe(true);
+    expect(submitBtn.textContent).toContain('Đang gửi...');
+  });
+
+  it('updates source code when user types into textarea', () => {
+    const handleSubmit = vi.fn();
+    render(<FreeModeEditor initialSource="" onSubmit={handleSubmit} />);
+
+    const textarea = screen.getByTestId('free-source-input') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'int x = 42;' } });
+    expect(textarea.value).toBe('int x = 42;');
   });
 });

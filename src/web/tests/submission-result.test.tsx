@@ -30,9 +30,9 @@ describe('SubmissionResultCard Component', () => {
     render(<SubmissionResultCard submission={mockSubmission} />);
 
     expect(screen.getByTestId('submission-score').textContent).toBe('1.00');
-    expect(screen.getByTestId('submission-verdict').textContent).toBe('AC');
-    expect(screen.getByTestId('test-verdict-1').textContent).toBe('AC');
-    expect(screen.getByTestId('test-verdict-2').textContent).toBe('AC');
+    expect(screen.getByTestId('submission-verdict').textContent).toBe('Đúng');
+    expect(screen.getByTestId('test-verdict-1').textContent).toBe('Đúng');
+    expect(screen.getByTestId('test-verdict-2').textContent).toBe('Đúng');
     expect(screen.getByText('15 ms')).toBeDefined();
     expect(screen.getByText('2048 KB')).toBeDefined();
   });
@@ -87,7 +87,7 @@ describe('SubmissionResultCard Component', () => {
 
     render(<SubmissionResultCard submission={ceSubmission} />);
 
-    expect(screen.getByTestId('submission-verdict').textContent).toBe('CE');
+    expect(screen.getByTestId('submission-verdict').textContent).toBe('Lỗi biên dịch');
     const compilePre = screen.getByTestId('compile-output');
     expect(compilePre.textContent).toContain('syntax error before semicolon');
   });
@@ -103,7 +103,7 @@ describe('SubmissionResultCard Component', () => {
 
     const alert = screen.getByTestId('system-error-alert');
     expect(alert.textContent).toContain('Hệ thống gặp sự cố trong quá trình chấm bài');
-    expect(alert.textContent).toContain('Vui lòng thử lại sau');
+    expect(alert.textContent).toContain('Vui lòng thử lại');
   });
 
   it('renders "Nộp trễ" badge when isLate is true (AC-US-17-2)', () => {
