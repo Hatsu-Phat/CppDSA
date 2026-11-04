@@ -91,6 +91,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     secret: cfg.cookieSecret,
   });
 
+  // Content type parser for raw PDF uploads
+  app.addContentTypeParser('application/pdf', { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body);
+  });
+
   // UUID validation hook: any path param :id or :studentId must be valid UUID before DB queries
   const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

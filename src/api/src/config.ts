@@ -20,6 +20,13 @@ export interface ApiConfig {
   maxTestCaseBytes: number;
   maxTestCasesPerAssignment: number;
   maxCsvRows: number;
+  statementStorage?: string;
+  statementLocalDir?: string;
+  gdriveClientId?: string;
+  gdriveClientSecret?: string;
+  gdriveRefreshToken?: string;
+  gdriveFolderId?: string;
+  maxStatementPdfBytes: number;
   now?: () => Date;
 }
 
@@ -108,6 +115,33 @@ export function buildConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
       overrides.maxTestCasesPerAssignment ??
       Number(process.env.MAX_TEST_CASES_PER_ASSIGNMENT || 50),
     maxCsvRows: overrides.maxCsvRows ?? Number(process.env.MAX_CSV_ROWS || 500),
+    statementStorage:
+      overrides.statementStorage !== undefined
+        ? overrides.statementStorage
+        : process.env.STATEMENT_STORAGE,
+    statementLocalDir:
+      overrides.statementLocalDir !== undefined
+        ? overrides.statementLocalDir
+        : process.env.STATEMENT_LOCAL_DIR || './data/statements',
+    gdriveClientId:
+      overrides.gdriveClientId !== undefined
+        ? overrides.gdriveClientId
+        : process.env.GDRIVE_CLIENT_ID,
+    gdriveClientSecret:
+      overrides.gdriveClientSecret !== undefined
+        ? overrides.gdriveClientSecret
+        : process.env.GDRIVE_CLIENT_SECRET,
+    gdriveRefreshToken:
+      overrides.gdriveRefreshToken !== undefined
+        ? overrides.gdriveRefreshToken
+        : process.env.GDRIVE_REFRESH_TOKEN,
+    gdriveFolderId:
+      overrides.gdriveFolderId !== undefined
+        ? overrides.gdriveFolderId
+        : process.env.GDRIVE_FOLDER_ID,
+    maxStatementPdfBytes:
+      overrides.maxStatementPdfBytes ??
+      Number(process.env.MAX_STATEMENT_PDF_BYTES || 10 * 1024 * 1024),
     now: overrides.now || (() => new Date()),
   };
 

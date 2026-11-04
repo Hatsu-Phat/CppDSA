@@ -320,3 +320,9 @@
 - Lệnh 1 (Claude tự chạy, thêm `--exclude=probs`): lint/format/build OK; web 33 test pass (vòng 1: 29), api 36 pass (58 integration skip do không có DB), grader 15, shared 25; `npm audit --audit-level=high` exit 0.
 - Lệnh 2 (Claude tự chạy E2E): `lecturer.spec.ts` + `student.spec.ts` 2/2 pass, 0 lỗi console (trang chủ đổi sang route web `/api-session` trả `{user:null}` khi chưa đăng nhập).
 - Ảnh: `home-dark.png` và `lecturer-dark.png` đúng chế độ tối; trang chi tiết bài nộp hiện từng vùng code và trạng thái tiếng Việt.
+
+## T-0014 vòng 1 — PASS (Claude nghiệm thu 2026-11-05)
+- Lệnh 1 (Claude tự chạy): lint/format/build OK; api 47 pass (62 skip không DB), web 36, grader 15, shared 25; audit high exit 0.
+- Lệnh 2: integration với Postgres 109/109 pass, 0 skip; `node-pg-migrate up` rồi `down` (gỡ 0003) đều "Migrations complete!".
+- Lệnh 3: E2E 2/2 pass (giảng viên đính PDF khi tạo bài; sinh viên xem PDF).
+- Review: `GET /api/assignments/:id` không trả `statement_file_id`/`statement_storage`; PUT kiểm `%PDF-`, `bodyLimit` 10 MB, chỉ GV chủ lớp; GET chỉ GV chủ lớp/SV đã ghi danh. Driver gdrive gọi REST bằng `fetch`, không thêm gói.

@@ -190,6 +190,18 @@ int main() {
       .fill('Cài đặt hàm reverseLinkedList đảo ngược danh sách liên kết đơn.');
     await page.getByTestId('assignment-ml-input').fill('256');
     await page.getByTestId('assignment-deadline-input').fill('2027-12-31T23:59');
+
+    // Attach PDF problem statement
+    const dummyPdfBuffer = Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF'
+    );
+    await page.getByTestId('assignment-pdf-input').setInputFiles({
+      name: 'de_bai_dao_nguoc.pdf',
+      mimeType: 'application/pdf',
+      buffer: dummyPdfBuffer,
+    });
+    await expect(page.getByTestId('pdf-file-info')).toContainText('de_bai_dao_nguoc.pdf');
+
     await page.getByTestId('submit-assignment-btn').click();
 
     await page.waitForURL(`**/lecturer/classrooms/${classroomId}`);

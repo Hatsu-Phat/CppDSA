@@ -3,6 +3,7 @@ import pg from 'pg';
 import { ApiConfig } from '../config.js';
 import { validateTemplateMarkers } from '../utils/template.js';
 import { dispatchSubmissionToGrader } from '../services/grader-dispatch.js';
+import { StatementStorageService } from '../services/statement-storage.js';
 
 export interface AssignmentRouteOptions {
   pool: pg.Pool;
@@ -14,6 +15,7 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
   options
 ) => {
   const { pool, config } = options;
+  const storageService = new StatementStorageService(config);
 
   // Helper to verify classroom ownership
   const verifyClassroomOwner = async (classroomId: string, userId: string) => {
@@ -195,7 +197,17 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
         'SELECT * FROM assignments WHERE classroom_id = $1 ORDER BY created_at DESC',
         [classroomId]
       );
-      return reply.code(200).send({ assignments: res.rows });
+      const assignments = res.rows.map((a: any) => {
+        const statement = a.statement_file_name
+          ? { name: a.statement_file_name, size: a.statement_file_size }
+          : null;
+        delete a.statement_file_id;
+        delete a.statement_storage;
+        delete a.statement_file_name;
+        delete a.statement_file_size;
+        return { ...a, statement };
+      });
+      return reply.code(200).send({ assignments });
     } else {
       const enrollRes = await pool.query(
         'SELECT id FROM classroom_enrollments WHERE classroom_id = $1 AND student_id = $2',
@@ -210,7 +222,7 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
       // Query assignments with student's best score
       const res = await pool.query(
         `SELECT a.id, a.classroom_id, a.title, a.description, a.mode, a.time_limit_ms, a.memory_limit_mb,
-                a.deadline, a.created_at,
+                a.deadline, a.created_at, a.statement_file_name, a.statement_file_size,
                 MAX(CASE WHEN s.status = 'COMPLETED' AND s.is_late = false THEN s.score ELSE NULL END) as "bestScore",
                 COUNT(s.id) as "submissionCount"
          FROM assignments a
@@ -221,7 +233,16 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
         [user.id, classroomId]
       );
 
-      return reply.code(200).send({ assignments: res.rows });
+      const assignments = res.rows.map((a: any) => {
+        const statement = a.statement_file_name
+          ? { name: a.statement_file_name, size: a.statement_file_size }
+          : null;
+        delete a.statement_file_name;
+        delete a.statement_file_size;
+        return { ...a, statement };
+      });
+
+      return reply.code(200).send({ assignments });
     }
   });
 
@@ -258,10 +279,20 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
     const result: any = {
       ...assignment,
       sampleTests: sampleTestsRes.rows,
+      statement: assignment.statement_file_name
+        ? {
+            name: assignment.statement_file_name,
+            size: assignment.statement_file_size,
+          }
+        : null,
     };
 
-    // Remove internal lecturer_id before sending
+    // Remove internal lecturer_id and storage credentials/ids before sending
     delete result.lecturer_id;
+    delete result.statement_storage;
+    delete result.statement_file_id;
+    delete result.statement_file_name;
+    delete result.statement_file_size;
 
     return reply.code(200).send({ assignment: result });
   });
@@ -383,14 +414,223 @@ export const assignmentRoutes: FastifyPluginAsync<AssignmentRouteOptions> = asyn
     }
 
     const { id } = request.params as { id: string };
-    const { exists, isOwner } = await verifyAssignmentAccess(id, user);
+    const { exists, isOwner, assignment } = await verifyAssignmentAccess(id, user);
     if (!exists)
       return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
     if (!isOwner)
       return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
 
+    if (assignment.statement_file_id && assignment.statement_storage) {
+      try {
+        await storageService.delete(assignment.statement_storage, assignment.statement_file_id);
+      } catch (delErr) {
+        request.log.warn({ err: delErr }, 'Failed to delete statement file from storage');
+      }
+    }
+
     await pool.query('DELETE FROM assignments WHERE id = $1', [id]);
     return reply.code(200).send({ message: 'Đã xóa bài tập thành công' });
+  });
+
+  // PUT /api/assignments/:id/statement (Lecturer owner only)
+  app.put(
+    '/assignments/:id/statement',
+    { bodyLimit: config.maxStatementPdfBytes },
+    async (request, reply) => {
+      const user = request.user;
+      if (!user) {
+        return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+      }
+      if (user.role !== 'LECTURER') {
+        return reply
+          .code(403)
+          .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền cập nhật đề bài' });
+      }
+
+      const { id } = request.params as { id: string };
+      const { exists, isOwner, assignment } = await verifyAssignmentAccess(id, user);
+      if (!exists) {
+        return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+      }
+      if (!isOwner) {
+        return reply
+          .code(403)
+          .send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+      }
+
+      const body = request.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'Nội dung file PDF không hợp lệ hoặc rỗng',
+        });
+      }
+
+      if (body.length > config.maxStatementPdfBytes) {
+        return reply.code(413).send({
+          error: 'PAYLOAD_TOO_LARGE',
+          message: `Dung lượng file PDF vượt quá giới hạn cho phép (${config.maxStatementPdfBytes} bytes)`,
+        });
+      }
+
+      // Check first 5 bytes for '%PDF-'
+      if (body.length < 5 || body.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        return reply.code(400).send({
+          error: 'BAD_REQUEST',
+          message: 'File không phải là định dạng PDF hợp lệ (thiếu marker %PDF-)',
+        });
+      }
+
+      let fileName = 'statement.pdf';
+      const rawFileNameHeader = request.headers['x-file-name'];
+      if (typeof rawFileNameHeader === 'string' && rawFileNameHeader.trim()) {
+        try {
+          fileName = decodeURIComponent(rawFileNameHeader.trim());
+        } catch {
+          fileName = rawFileNameHeader.trim();
+        }
+      }
+      if (fileName.length > 255) {
+        fileName = fileName.substring(0, 255);
+      }
+
+      try {
+        const uploadResult = await storageService.upload(fileName, body);
+        const oldStorage = assignment.statement_storage;
+        const oldFileId = assignment.statement_file_id;
+
+        await pool.query(
+          `UPDATE assignments
+           SET statement_storage = $1, statement_file_id = $2, statement_file_name = $3,
+               statement_file_size = $4, updated_at = NOW()
+           WHERE id = $5`,
+          [uploadResult.storage, uploadResult.fileId, fileName, body.length, id]
+        );
+
+        // Delete old file from storage after saving new file successfully
+        if (oldFileId && oldStorage) {
+          try {
+            await storageService.delete(oldStorage, oldFileId);
+          } catch (delErr) {
+            request.log.warn({ err: delErr }, 'Failed to delete old statement file');
+          }
+        }
+
+        return reply.code(200).send({
+          message: 'Tải lên đề bài PDF thành công',
+          statement: {
+            name: fileName,
+            size: body.length,
+          },
+        });
+      } catch (err: any) {
+        if (err.statusCode === 503 || err.message === 'Chưa cấu hình lưu trữ đề bài PDF') {
+          return reply.code(503).send({
+            error: 'SERVICE_UNAVAILABLE',
+            message: 'Chưa cấu hình lưu trữ đề bài PDF',
+          });
+        }
+        throw err;
+      }
+    }
+  );
+
+  // GET /api/assignments/:id/statement (Lecturer owner or Enrolled student)
+  app.get('/assignments/:id/statement', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    const { id } = request.params as { id: string };
+
+    const { exists, isOwner, isEnrolled, assignment } = await verifyAssignmentAccess(id, user);
+    if (!exists) {
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+    }
+
+    if (user.role === 'LECTURER' && !isOwner) {
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+    }
+    if (user.role === 'STUDENT' && !isEnrolled) {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Bạn không có quyền truy cập bài tập này' });
+    }
+    if (user.role !== 'LECTURER' && user.role !== 'STUDENT') {
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Không có quyền truy cập' });
+    }
+
+    if (!assignment.statement_file_id || !assignment.statement_storage) {
+      return reply
+        .code(404)
+        .send({ error: 'NOT_FOUND', message: 'Bài tập chưa có file đề bài PDF' });
+    }
+
+    try {
+      const buffer = await storageService.download(
+        assignment.statement_storage,
+        assignment.statement_file_id
+      );
+
+      const fileName = assignment.statement_file_name || 'statement.pdf';
+      const encodedFileName = encodeURIComponent(fileName);
+
+      return reply
+        .type('application/pdf')
+        .header('Content-Disposition', `inline; filename*=UTF-8''${encodedFileName}`)
+        .header('Cache-Control', 'private, max-age=300')
+        .send(buffer);
+    } catch (err: any) {
+      if (err.statusCode === 404) {
+        return reply
+          .code(404)
+          .send({ error: 'NOT_FOUND', message: 'Không tìm thấy file đề bài PDF' });
+      }
+      throw err;
+    }
+  });
+
+  // DELETE /api/assignments/:id/statement (Lecturer owner only)
+  app.delete('/assignments/:id/statement', async (request, reply) => {
+    const user = request.user;
+    if (!user) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập' });
+    }
+    if (user.role !== 'LECTURER') {
+      return reply
+        .code(403)
+        .send({ error: 'FORBIDDEN', message: 'Chỉ giảng viên mới có quyền xóa file đề bài' });
+    }
+
+    const { id } = request.params as { id: string };
+    const { exists, isOwner, assignment } = await verifyAssignmentAccess(id, user);
+    if (!exists) {
+      return reply.code(404).send({ error: 'NOT_FOUND', message: 'Không tìm thấy bài tập' });
+    }
+    if (!isOwner) {
+      return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không sở hữu bài tập này' });
+    }
+
+    const oldStorage = assignment.statement_storage;
+    const oldFileId = assignment.statement_file_id;
+
+    await pool.query(
+      `UPDATE assignments
+       SET statement_storage = NULL, statement_file_id = NULL, statement_file_name = NULL,
+           statement_file_size = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (oldFileId && oldStorage) {
+      try {
+        await storageService.delete(oldStorage, oldFileId);
+      } catch (delErr) {
+        request.log.warn({ err: delErr }, 'Failed to delete statement file from storage');
+      }
+    }
+
+    return reply.code(200).send({ message: 'Đã xóa file đề bài PDF thành công' });
   });
 
   // POST /api/assignments/:id/regrade (Lecturer owner only)

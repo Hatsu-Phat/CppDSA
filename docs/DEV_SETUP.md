@@ -76,6 +76,13 @@ cp .env.example .env
 | `COOKIE_SECRET` | Khóa ký session cookie Fastify (tối thiểu 32 ký tự) | `dev-cookie-secret-32-characters-minimum-key!` |
 | `NODE_ENV` | Môi trường thực thi (development / production / test) | `development` |
 | `ENABLE_CGROUP_LOGGING` | Bật ghi log định kỳ tài nguyên cgroup CPU/RAM | `false` |
+| `STATEMENT_STORAGE` | Driver lưu trữ đề bài PDF (`local` hoặc `gdrive`) | `local` |
+| `STATEMENT_LOCAL_DIR` | Thư mục lưu file đề bài PDF local | `/tmp/cppdsa-statements` |
+| `MAX_STATEMENT_PDF_BYTES` | Giới hạn dung lượng file PDF đề bài (bytes) | `10485760` (10 MB) |
+| `GDRIVE_CLIENT_ID` | OAuth2 Client ID truy cập Google Drive | (tùy chọn dev) |
+| `GDRIVE_CLIENT_SECRET` | OAuth2 Client Secret truy cập Google Drive | (tùy chọn dev) |
+| `GDRIVE_REFRESH_TOKEN` | OAuth2 Refresh Token cho Google Drive | (tùy chọn dev) |
+| `GDRIVE_FOLDER_ID` | ID thư mục lưu trữ trên Google Drive | (tùy chọn) |
 
 ---
 

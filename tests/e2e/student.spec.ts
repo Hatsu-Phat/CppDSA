@@ -222,6 +222,20 @@ int main() {
     const assign1Data = await assign1Res.json();
     const assign1Id = assign1Data.assignment.id;
 
+    // Upload PDF problem statement to assignment 1
+    const dummyPdfBuffer = Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF'
+    );
+    const statementRes = await request.put(`${rootUrl}/api/assignments/${assign1Id}/statement`, {
+      headers: {
+        cookie: lecCookie!,
+        'content-type': 'application/pdf',
+        'x-file-name': 'de_bai_dao_nguoc.pdf',
+      },
+      data: dummyPdfBuffer,
+    });
+    expect(statementRes.status()).toBe(200);
+
     // Add hidden tests with HIDDEN_MARK_P7
     await request.post(`${rootUrl}/api/assignments/${assign1Id}/tests`, {
       headers: { cookie: lecCookie! },
@@ -436,6 +450,11 @@ ListNode* reverseLinkedList(ListNode* head) {
     expect(studentPageText1).not.toContain('Chế độ Khung mẫu (TEMPLATE)');
     expect(studentPageText1).not.toContain('Chế độ Tự do (FREE)');
     expect(studentPageText1).not.toContain('(ID:');
+
+    // Verify PDF statement frame and buttons are visible
+    await expect(page.getByTestId('pdf-statement-frame')).toBeVisible();
+    await expect(page.getByTestId('open-pdf-tab-btn')).toBeVisible();
+    await expect(page.getByTestId('download-pdf-btn')).toBeVisible();
 
     // Take screenshot student-assignment-work.png on "Làm bài" tab
     await expect(page.getByTestId('tab-work')).toHaveClass(/active/);
